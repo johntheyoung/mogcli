@@ -175,6 +175,7 @@ Mail:
 mog mail list --max 50 --query "from:alerts@example.com"
 mog mail get <message-id>
 mog mail send --to dev@contoso.com --subject "Deploy complete" --body "Finished."
+mog mail send --to dev@contoso.com --subject "Re: Deploy complete" --quote <message-id>
 mog mail send --to dev@contoso.com --subject "Deploy complete" --body "Finished." --dry-run
 ```
 
@@ -195,6 +196,16 @@ Contacts:
 ```bash
 mog contacts list --max 100
 mog contacts create --display-name "Jane Doe" --email "jane@contoso.com"
+mog contacts create \
+  --display-name "Jane Doe" \
+  --email "jane@contoso.com" \
+  --org "Contoso" \
+  --title "Program Manager" \
+  --url "https://contoso.example/jane" \
+  --note "Customer success lead" \
+  --custom region=NA \
+  --custom team=platform
+mog contacts update <contact-id> --title "Director" --custom region=EMEA
 ```
 
 Groups:
@@ -276,6 +287,14 @@ Current keys:
 - `keyring_backend`
 
 Profile metadata is stored in config. Tokens and secrets are stored via keychain/keyring backends.
+
+`keyring_backend` supports `auto`, `keychain`, and `file`.
+
+- `auto`: use native OS keychain when available, otherwise file backend.
+- `keychain`: require native OS keychain support.
+- `file`: store under the local mogcli keyring directory.
+
+`MOG_KEYRING_PASSWORD` is treated as explicitly configured even when empty, so headless runs do not implicitly prompt for keyring passwords.
 
 ## Troubleshooting
 

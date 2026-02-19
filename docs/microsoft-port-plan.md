@@ -1,10 +1,10 @@
 # mogcli Microsoft Port Plan (Revision 2)
 
-Date: 2026-02-12
+Date: 2026-02-19
 Status: implementation in progress (auth wizard, progressive delegated consent, and selective app-only routing implemented)
 Audience: Codex agents implementing `mogcli`
 
-## Implementation status update (2026-02-12)
+## Implementation status update (2026-02-19)
 
 Implemented in codebase:
 
@@ -20,6 +20,10 @@ Implemented in codebase:
 10. Task mutation mutability error normalization in `internal/services/tasks/service.go` for built-in/well-known Microsoft To Do list constraints.
 11. `--dry-run` previews for write operations in mail, calendar, and onedrive command surfaces.
 12. OneDrive local path hardening (`SafeExpandPath`), metadata-rich delete confirmation, and progress output for local file transfers.
+13. Keyring backend hardening: `auto|keychain|file` resolution, native macOS keychain support, and explicit empty `MOG_KEYRING_PASSWORD` handling for headless contexts.
+14. Calendar update patch safety: attendee updates are split from reminder-field patches to avoid Graph validation conflicts.
+15. Contacts create/update now supports richer fields (`org`, `title`, `url`, `note`, `custom`) with deterministic custom-field ordering in command output.
+16. Mail send supports quoted replies via `--quote <message-id>` to include source message context automatically.
 
 ## 0. Critique of the prior plan
 
