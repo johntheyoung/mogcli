@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
 
 	"github.com/jaredpalmer/mogcli/internal/graph"
@@ -46,6 +47,47 @@ func TestListUsesPageTokenURL(t *testing.T) {
 	}
 	if next != serverURL+"/contacts/next?state=next" {
 		t.Fatalf("unexpected next link: %s", next)
+	}
+}
+
+func TestListSelectIncludesExtendedFieldsAndNormalizesCustom(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/me/contacts" {
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+		selectValue := r.URL.Query().Get("$select")
+		for _, required := range []string{"companyName", "jobTitle", "businessHomePage", "personalNotes", "categories"} {
+			if !strings.Contains(selectValue, required) {
+				t.Fatalf("expected $select to include %s, got %q", required, selectValue)
+			}
+		}
+		_, _ = fmt.Fprint(w, `{"value":[{"id":"1","categories":["mog.custom.team=platform","mog.custom.region=NA"]}]}`)
+	}))
+	defer server.Close()
+
+	client := graph.NewClient(func(context.Context, []string) (string, error) { return "token", nil })
+	client.BaseURL = server.URL
+	client.HTTPClient = server.Client()
+
+	items, _, err := New(client, "").List(context.Background(), 10, "")
+	if err != nil {
+		t.Fatalf("List failed: %v", err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("expected one contact, got %d", len(items))
+	}
+
+	custom, ok := items[0]["custom"].([]CustomField)
+	if !ok {
+		t.Fatalf("expected normalized custom fields, got %#v", items[0]["custom"])
+	}
+	if len(custom) != 2 {
+		t.Fatalf("expected two custom fields, got %d", len(custom))
+	}
+	if custom[0].Key != "region" || custom[1].Key != "team" {
+		t.Fatalf("expected deterministic custom order, got %#v", custom)
 	}
 }
 

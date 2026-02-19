@@ -80,10 +80,15 @@ func (c *ContactsGetCmd) Run(ctx context.Context) error {
 }
 
 type ContactsCreateCmd struct {
-	DisplayName string `name:"display-name" required:"" help:"Contact display name"`
-	Email       string `name:"email" help:"Primary email"`
-	MobilePhone string `name:"mobile-phone" help:"Mobile phone"`
-	User        string `name:"user" help:"App-only target user override (UPN or user ID)"`
+	DisplayName string   `name:"display-name" required:"" help:"Contact display name"`
+	Email       string   `name:"email" help:"Primary email"`
+	MobilePhone string   `name:"mobile-phone" help:"Mobile phone"`
+	Org         string   `name:"org" help:"Organization/company name"`
+	Title       string   `name:"title" help:"Job title"`
+	URL         string   `name:"url" help:"Business homepage URL"`
+	Note        string   `name:"note" help:"Personal note"`
+	Custom      []string `name:"custom" help:"Custom field key=value (repeat or comma-separate)"`
+	User        string   `name:"user" help:"App-only target user override (UPN or user ID)"`
 }
 
 func (c *ContactsCreateCmd) Run(ctx context.Context) error {
@@ -103,6 +108,26 @@ func (c *ContactsCreateCmd) Run(ctx context.Context) error {
 	if strings.TrimSpace(c.MobilePhone) != "" {
 		payload["mobilePhone"] = c.MobilePhone
 	}
+	if strings.TrimSpace(c.Org) != "" {
+		payload["companyName"] = strings.TrimSpace(c.Org)
+	}
+	if strings.TrimSpace(c.Title) != "" {
+		payload["jobTitle"] = strings.TrimSpace(c.Title)
+	}
+	if strings.TrimSpace(c.URL) != "" {
+		payload["businessHomePage"] = strings.TrimSpace(c.URL)
+	}
+	if strings.TrimSpace(c.Note) != "" {
+		payload["personalNotes"] = strings.TrimSpace(c.Note)
+	}
+
+	customFields, err := contacts.ParseCustomFields(c.Custom)
+	if err != nil {
+		return usage(err.Error())
+	}
+	if len(customFields) > 0 {
+		payload["categories"] = contacts.EncodeCustomFieldCategories(customFields)
+	}
 
 	item, err := contacts.New(rt.Graph, targetUser).Create(ctx, payload)
 	if err != nil {
@@ -117,11 +142,16 @@ func (c *ContactsCreateCmd) Run(ctx context.Context) error {
 }
 
 type ContactsUpdateCmd struct {
-	ID          string `arg:"" required:"" help:"Contact ID"`
-	DisplayName string `name:"display-name" help:"Contact display name"`
-	Email       string `name:"email" help:"Primary email"`
-	MobilePhone string `name:"mobile-phone" help:"Mobile phone"`
-	User        string `name:"user" help:"App-only target user override (UPN or user ID)"`
+	ID          string   `arg:"" required:"" help:"Contact ID"`
+	DisplayName string   `name:"display-name" help:"Contact display name"`
+	Email       string   `name:"email" help:"Primary email"`
+	MobilePhone string   `name:"mobile-phone" help:"Mobile phone"`
+	Org         string   `name:"org" help:"Organization/company name"`
+	Title       string   `name:"title" help:"Job title"`
+	URL         string   `name:"url" help:"Business homepage URL"`
+	Note        string   `name:"note" help:"Personal note"`
+	Custom      []string `name:"custom" help:"Custom field key=value (repeat or comma-separate)"`
+	User        string   `name:"user" help:"App-only target user override (UPN or user ID)"`
 }
 
 func (c *ContactsUpdateCmd) Run(ctx context.Context) error {
@@ -139,8 +169,22 @@ func (c *ContactsUpdateCmd) Run(ctx context.Context) error {
 	if strings.TrimSpace(c.MobilePhone) != "" {
 		payload["mobilePhone"] = c.MobilePhone
 	}
-	if len(payload) == 0 {
-		return usage("provide at least one field to update")
+	if strings.TrimSpace(c.Org) != "" {
+		payload["companyName"] = strings.TrimSpace(c.Org)
+	}
+	if strings.TrimSpace(c.Title) != "" {
+		payload["jobTitle"] = strings.TrimSpace(c.Title)
+	}
+	if strings.TrimSpace(c.URL) != "" {
+		payload["businessHomePage"] = strings.TrimSpace(c.URL)
+	}
+	if strings.TrimSpace(c.Note) != "" {
+		payload["personalNotes"] = strings.TrimSpace(c.Note)
+	}
+
+	customFields, err := contacts.ParseCustomFields(c.Custom)
+	if err != nil {
+		return usage(err.Error())
 	}
 
 	rt, err := resolveRuntime(ctx, capContactsUpdate)
@@ -151,7 +195,18 @@ func (c *ContactsUpdateCmd) Run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if err := contacts.New(rt.Graph, targetUser).Update(ctx, c.ID, payload); err != nil {
+	svc := contacts.New(rt.Graph, targetUser)
+	if len(customFields) > 0 {
+		existing, getErr := svc.Get(ctx, c.ID)
+		if getErr != nil {
+			return getErr
+		}
+		payload["categories"] = contacts.MergeCustomFieldCategories(existing["categories"], customFields)
+	}
+	if len(payload) == 0 {
+		return usage("provide at least one field to update")
+	}
+	if err := svc.Update(ctx, c.ID, payload); err != nil {
 		return err
 	}
 

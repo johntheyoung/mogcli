@@ -28,7 +28,7 @@ func New(client *graph.Client, appOnlyUser string) *Service {
 
 func (s *Service) List(ctx context.Context, max int, page string) ([]map[string]any, string, error) {
 	query := url.Values{}
-	query.Set("$select", "id,displayName,emailAddresses,mobilePhone")
+	query.Set("$select", "id,displayName,emailAddresses,mobilePhone,companyName,jobTitle,businessHomePage,personalNotes,categories")
 	if max > 0 {
 		query.Set("$top", fmt.Sprintf("%d", max))
 	}
@@ -50,18 +50,23 @@ func (s *Service) List(ctx context.Context, max int, page string) ([]map[string]
 	}
 
 	trimmed, trimmedNext := trimPage(items, next, max)
+	for _, item := range trimmed {
+		addNormalizedCustomFields(item)
+	}
 	return trimmed, trimmedNext, nil
 }
 
 func (s *Service) Get(ctx context.Context, id string) (map[string]any, error) {
 	var payload map[string]any
 	err := s.client.DoJSON(ctx, http.MethodGet, s.contactsEndpoint()+"/"+url.PathEscape(strings.TrimSpace(id)), nil, nil, getContactsScopes, &payload)
+	addNormalizedCustomFields(payload)
 	return payload, err
 }
 
 func (s *Service) Create(ctx context.Context, payload map[string]any) (map[string]any, error) {
 	var created map[string]any
 	err := s.client.DoJSON(ctx, http.MethodPost, s.contactsEndpoint(), nil, payload, createContactsScopes, &created)
+	addNormalizedCustomFields(created)
 	return created, err
 }
 
