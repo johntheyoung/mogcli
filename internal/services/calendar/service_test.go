@@ -2,6 +2,7 @@ package calendar
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -45,5 +46,107 @@ func TestListUsesPageTokenURL(t *testing.T) {
 	}
 	if next != serverURL+"/calendar/next?state=next" {
 		t.Fatalf("unexpected next link: %s", next)
+	}
+}
+
+func TestUpdateSplitsAttendeesFromReminderPatch(t *testing.T) {
+	var payloads []map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPatch {
+			t.Fatalf("unexpected method %s", r.Method)
+		}
+		if r.URL.Path != "/me/events/event-id" {
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("decode body failed: %v", err)
+		}
+		payloads = append(payloads, body)
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+
+	client := graph.NewClient(func(context.Context, []string) (string, error) { return "token", nil })
+	client.BaseURL = server.URL
+	client.HTTPClient = server.Client()
+
+	payload := map[string]any{
+		"subject":                    "Updated",
+		"isReminderOn":               true,
+		"reminderMinutesBeforeStart": 15,
+		"attendees": []map[string]any{
+			{
+				"emailAddress": map[string]any{"address": "dev@example.com"},
+				"type":         "required",
+			},
+		},
+	}
+
+	if err := New(client).Update(context.Background(), "event-id", payload); err != nil {
+		t.Fatalf("Update failed: %v", err)
+	}
+
+	if len(payloads) != 2 {
+		t.Fatalf("expected two patch requests, got %d", len(payloads))
+	}
+
+	if _, ok := payloads[0]["attendees"]; ok {
+		t.Fatalf("expected first patch payload to exclude attendees: %#v", payloads[0])
+	}
+	if _, ok := payloads[0]["isReminderOn"]; !ok {
+		t.Fatalf("expected first payload to include reminder field: %#v", payloads[0])
+	}
+
+	if len(payloads[1]) != 1 {
+		t.Fatalf("expected second payload to include only attendees, got %#v", payloads[1])
+	}
+	if _, ok := payloads[1]["attendees"]; !ok {
+		t.Fatalf("expected second payload to include attendees: %#v", payloads[1])
+	}
+}
+
+func TestUpdateSendsSinglePatchWhenNoReminderAttendeeConflict(t *testing.T) {
+	requests := 0
+	var received map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		if r.Method != http.MethodPatch {
+			t.Fatalf("unexpected method %s", r.Method)
+		}
+		if r.URL.Path != "/me/events/event-id" {
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+		if err := json.NewDecoder(r.Body).Decode(&received); err != nil {
+			t.Fatalf("decode body failed: %v", err)
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+
+	client := graph.NewClient(func(context.Context, []string) (string, error) { return "token", nil })
+	client.BaseURL = server.URL
+	client.HTTPClient = server.Client()
+
+	payload := map[string]any{
+		"subject": "Updated",
+		"attendees": []map[string]any{
+			{
+				"emailAddress": map[string]any{"address": "dev@example.com"},
+				"type":         "required",
+			},
+		},
+	}
+
+	if err := New(client).Update(context.Background(), "event-id", payload); err != nil {
+		t.Fatalf("Update failed: %v", err)
+	}
+
+	if requests != 1 {
+		t.Fatalf("expected one patch request, got %d", requests)
+	}
+	if _, ok := received["attendees"]; !ok {
+		t.Fatalf("expected attendees field in patch payload: %#v", received)
 	}
 }

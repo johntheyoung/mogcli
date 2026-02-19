@@ -69,8 +69,22 @@ func (s *Service) Create(ctx context.Context, payload map[string]any) (map[strin
 }
 
 func (s *Service) Update(ctx context.Context, id string, payload map[string]any) error {
-	_, _, err := s.client.Do(ctx, http.MethodPatch, "/me/events/"+url.PathEscape(strings.TrimSpace(id)), nil, payload, updateCalendarScopes, nil)
-	return err
+	endpoint := "/me/events/" + url.PathEscape(strings.TrimSpace(id))
+	primary, attendeesOnly := splitUpdatePayload(payload)
+
+	if len(primary) > 0 {
+		if _, _, err := s.client.Do(ctx, http.MethodPatch, endpoint, nil, primary, updateCalendarScopes, nil); err != nil {
+			return err
+		}
+	}
+
+	if len(attendeesOnly) > 0 {
+		if _, _, err := s.client.Do(ctx, http.MethodPatch, endpoint, nil, attendeesOnly, updateCalendarScopes, nil); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 func (s *Service) Delete(ctx context.Context, id string) error {
@@ -83,4 +97,33 @@ func trimPage(items []map[string]any, next string, max int) ([]map[string]any, s
 		return items, next
 	}
 	return items[:max], next
+}
+
+func splitUpdatePayload(payload map[string]any) (map[string]any, map[string]any) {
+	if len(payload) == 0 {
+		return map[string]any{}, nil
+	}
+
+	attendees, hasAttendees := payload["attendees"]
+	if !hasAttendees || !hasReminderField(payload) {
+		return clonePayload(payload), nil
+	}
+
+	primary := clonePayload(payload)
+	delete(primary, "attendees")
+	return primary, map[string]any{"attendees": attendees}
+}
+
+func hasReminderField(payload map[string]any) bool {
+	_, hasReminderOn := payload["isReminderOn"]
+	_, hasReminderMins := payload["reminderMinutesBeforeStart"]
+	return hasReminderOn || hasReminderMins
+}
+
+func clonePayload(payload map[string]any) map[string]any {
+	cloned := make(map[string]any, len(payload))
+	for key, value := range payload {
+		cloned[key] = value
+	}
+	return cloned
 }
