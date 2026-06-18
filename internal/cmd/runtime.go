@@ -37,6 +37,9 @@ const (
 	capGroupsList     runtimeCapability = "groups.list"
 	capGroupsGet      runtimeCapability = "groups.get"
 	capGroupsMembers  runtimeCapability = "groups.members"
+	capTeamsList      runtimeCapability = "teams.list"
+	capTeamsChannels  runtimeCapability = "teams.channels"
+	capTeamsSend      runtimeCapability = "teams.channel-send"
 	capTasksLists     runtimeCapability = "tasks.lists"
 	capTasksList      runtimeCapability = "tasks.list"
 	capTasksGet       runtimeCapability = "tasks.get"
@@ -82,6 +85,9 @@ var capabilityRules = map[runtimeCapability]capabilityRule{
 	capGroupsList:     groupsRule(),
 	capGroupsGet:      groupsRule(),
 	capGroupsMembers:  groupsRule(),
+	capTeamsList:      teamsRule(),
+	capTeamsChannels:  teamsRule(),
+	capTeamsSend:      teamsRule(),
 	capTasksLists:     delegatedOnlyRule(tasksAppOnlyMessage),
 	capTasksList:      delegatedOnlyRule(tasksAppOnlyMessage),
 	capTasksGet:       delegatedOnlyRule(tasksAppOnlyMessage),
@@ -132,6 +138,19 @@ func groupsRule() capabilityRule {
 			profile.AuthModeAppOnly,
 		},
 		unsupportedAudienceMessage: enterpriseOnlyProfileMessage,
+	}
+}
+
+func teamsRule() capabilityRule {
+	return capabilityRule{
+		allowedAudiences: []string{
+			profile.AudienceEnterprise,
+		},
+		allowedAuthModes: []string{
+			profile.AuthModeDelegated,
+		},
+		unsupportedAudienceMessage: "Teams commands require an enterprise profile. Use `mog auth use <enterprise-profile>`.",
+		unsupportedAuthModeMessage: "Teams commands are not supported in app-only mode. Use a delegated profile (`mog auth use <profile>`) or re-login without `--mode app-only`.",
 	}
 }
 

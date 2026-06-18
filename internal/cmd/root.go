@@ -19,6 +19,7 @@ type RootFlags struct {
 	Profile        string `name:"use-profile" group:"inherited-flags" help:"Profile name override for API commands" default:"${profile}"`
 	Client         string `group:"inherited-flags" help:"Logical client registration name" default:"${client}"`
 	EnableCommands string `group:"inherited-flags" help:"Comma-separated list of enabled top-level commands (restricts CLI)" default:"${enabled_commands}"`
+	EnableActions  string `group:"inherited-flags" help:"Comma-separated list of enabled command actions (for example mail.list,teams.channel-send)" default:"${enabled_actions}"`
 	JSON           bool   `group:"inherited-flags" help:"Output JSON to stdout (best for scripting)" default:"${json}"`
 	Plain          bool   `group:"inherited-flags" help:"Output stable, parseable text to stdout (TSV)" default:"${plain}"`
 	Force          bool   `group:"inherited-flags" help:"Skip confirmations for destructive commands"`
@@ -36,6 +37,7 @@ type CLI struct {
 	Calendar   CalendarCmd           `cmd:"" help:"Manage Outlook calendar events"`
 	Contacts   ContactsCmd           `cmd:"" help:"Manage Outlook contacts"`
 	Groups     GroupsCmd             `cmd:"" help:"Manage Microsoft 365 Groups (enterprise only)"`
+	Teams      TeamsCmd              `cmd:"" help:"Manage Microsoft Teams"`
 	Tasks      TasksCmd              `cmd:"" help:"Manage Microsoft To Do tasks"`
 	OneDrive   OneDriveCmd           `cmd:"" name:"onedrive" help:"Manage OneDrive files and folders"`
 	Config     ConfigCmd             `cmd:"" help:"View and manage configuration"`
@@ -80,6 +82,10 @@ func Execute(args []string) (err error) {
 	}
 
 	if err = enforceEnabledCommands(kctx, cli.EnableCommands); err != nil {
+		_, _ = fmt.Fprintln(os.Stderr, errfmt.Format(err))
+		return err
+	}
+	if err = enforceEnabledActions(kctx, cli.EnableActions); err != nil {
 		_, _ = fmt.Fprintln(os.Stderr, errfmt.Format(err))
 		return err
 	}
@@ -151,6 +157,7 @@ func newParser(description string) (*kong.Kong, *CLI, error) {
 		"profile":          envOr("MOG_PROFILE", ""),
 		"client":           envOr("MOG_CLIENT", ""),
 		"enabled_commands": envOr("MOG_ENABLE_COMMANDS", ""),
+		"enabled_actions":  envOr("MOG_ENABLE_ACTIONS", ""),
 		"json":             boolString(envMode.JSON),
 		"plain":            boolString(envMode.Plain),
 		"version":          VersionString(),
@@ -176,7 +183,7 @@ func newParser(description string) (*kong.Kong, *CLI, error) {
 }
 
 func baseDescription() string {
-	return "Microsoft Graph CLI for Outlook Mail/Calendar/Contacts/Groups/Tasks/OneDrive"
+	return "Microsoft Graph CLI for Outlook Mail/Calendar/Contacts/Groups/Teams/Tasks/OneDrive"
 }
 
 func helpDescription() string {

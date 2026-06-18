@@ -67,12 +67,12 @@ type AuthLoginCmd struct {
 	Tenant          string `name:"tenant" help:"Tenant ID or domain (enterprise only)"`
 	Authority       string `name:"authority" hidden:"" help:"Advanced authority override"`
 	Mode            string `name:"mode" default:"delegated" help:"Auth mode: delegated or app-only"`
-	ClientSecret      string `name:"client-secret" help:"Client secret (required for app-only; optional for delegated with confidential clients)"`
-	ClientSecretEnv   string `name:"client-secret-env" help:"Env var containing the client secret"`
-	RefreshToken      string `name:"refresh-token" help:"Pre-existing refresh token for headless delegated login (skips device code flow)"`
-	RefreshTokenEnv   string `name:"refresh-token-env" help:"Env var containing a pre-existing refresh token"`
-	ScopeWorkloads    string `name:"scope-workloads" help:"Comma-separated workloads: mail,calendar,contacts,tasks,onedrive,groups"`
-	AppOnlyUser       string `name:"app-only-user" help:"Default target user for app-only commands (UPN or user ID)"`
+	ClientSecret    string `name:"client-secret" help:"Client secret (required for app-only; optional for delegated with confidential clients)"`
+	ClientSecretEnv string `name:"client-secret-env" help:"Env var containing the client secret"`
+	RefreshToken    string `name:"refresh-token" help:"Pre-existing refresh token for headless delegated login (skips device code flow)"`
+	RefreshTokenEnv string `name:"refresh-token-env" help:"Env var containing a pre-existing refresh token"`
+	ScopeWorkloads  string `name:"scope-workloads" help:"Comma-separated workloads: mail,calendar,contacts,tasks,onedrive,groups,teams"`
+	AppOnlyUser     string `name:"app-only-user" help:"Default target user for app-only commands (UPN or user ID)"`
 }
 
 type authLoginParams struct {
@@ -199,7 +199,7 @@ func (c *AuthLoginCmd) runInteractive(ctx context.Context) error {
 	if mode == profile.AuthModeDelegated {
 		allWorkloads := []string{"mail", "calendar", "contacts", "tasks", "onedrive"}
 		if audience == profile.AudienceEnterprise {
-			allWorkloads = append(allWorkloads, "groups")
+			allWorkloads = append(allWorkloads, "groups", "teams")
 		}
 		var err error
 		workloads, err = promptDelegatedWorkloads(ctx, audience, allWorkloads)
@@ -528,6 +528,7 @@ func promptDelegatedWorkloads(ctx context.Context, audience string, defaults []s
 	}
 	if audience == profile.AudienceEnterprise {
 		workloadOptions = append(workloadOptions, input.SelectStringOption{Label: "groups (enterprise only)", Value: "groups"})
+		workloadOptions = append(workloadOptions, input.SelectStringOption{Label: "teams (enterprise only)", Value: "teams"})
 	}
 
 	selected, err := input.MultiSelectStrings(ctx, input.MultiSelectStringConfig{
@@ -943,7 +944,7 @@ func removeGroupsWorkload(workloads []string) []string {
 	out := make([]string, 0, len(workloads))
 	for _, workload := range workloads {
 		trimmed := strings.ToLower(strings.TrimSpace(workload))
-		if trimmed == "" || trimmed == "groups" {
+		if trimmed == "" || trimmed == "groups" || trimmed == "teams" {
 			continue
 		}
 		out = append(out, trimmed)

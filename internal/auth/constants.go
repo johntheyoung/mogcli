@@ -14,6 +14,7 @@ var delegatedScopeWorkloadOrder = []string{
 	"tasks",
 	"onedrive",
 	"groups",
+	"teams",
 }
 
 var delegatedScopeWorkloadMap = map[string][]string{
@@ -41,6 +42,11 @@ var delegatedScopeWorkloadMap = map[string][]string{
 		"Group.Read.All",
 		"GroupMember.Read.All",
 	},
+	"teams": {
+		"Team.ReadBasic.All",
+		"Channel.ReadBasic.All",
+		"ChannelMessage.Send",
+	},
 }
 
 var AllDelegatedWorkloadScopes = []string{
@@ -56,4 +62,7 @@ var AllDelegatedWorkloadScopes = []string{
 	"Files.ReadWrite",
 	"Group.Read.All",
 	"GroupMember.Read.All",
+	"Team.ReadBasic.All",
+	"Channel.ReadBasic.All",
+	"ChannelMessage.Send",
 }
