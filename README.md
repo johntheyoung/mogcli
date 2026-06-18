@@ -2,7 +2,7 @@
 
 Unofficial agent-friendly Microsoft 365 CLI
 
-`mogcli` is a Microsoft Graph CLI for personal Microsoft accounts (MSA) and enterprise Microsoft Entra ID accounts. It provides scriptable commands for Mail, Calendar, Contacts, Groups, Tasks, and OneDrive.
+`mogcli` is a Microsoft Graph CLI for personal Microsoft accounts (MSA) and enterprise Microsoft Entra ID accounts. It provides scriptable commands for Mail, Calendar, Contacts, Groups, Teams, Tasks, and OneDrive.
 
 ## What mogcli supports
 
@@ -22,6 +22,7 @@ Unofficial agent-friendly Microsoft 365 CLI
 | Calendar | Yes | No |
 | Contacts | Yes | Yes (enterprise, requires target user) |
 | Groups | Enterprise only | Enterprise only |
+| Teams | Enterprise delegated only | No |
 | Tasks (Microsoft To Do) | Yes | No |
 | OneDrive | Yes | Yes (enterprise, requires target user) |
 
@@ -30,6 +31,7 @@ Notes:
 - App-only mode is enterprise-only.
 - Calendar and tasks are intentionally blocked in app-only mode.
 - Groups are intentionally blocked for consumer profiles.
+- Teams commands are intentionally delegated-only because normal channel message sends act on behalf of the signed-in user.
 
 ## Install
 
@@ -112,7 +114,7 @@ mog auth login \
   --audience enterprise \
   --client-id <enterprise-client-id> \
   --tenant <tenant-id-or-domain> \
-  --scope-workloads mail,calendar,contacts,tasks,onedrive,groups
+  --scope-workloads mail,calendar,contacts,tasks,onedrive,groups,teams
 ```
 
 ### 3) Scripted app-only login (enterprise)
@@ -162,6 +164,7 @@ The update flow shows current settings, lets you choose one field at a time to e
 - `mog calendar list|get|create|update|delete`
 - `mog contacts list|get|create|update|delete`
 - `mog groups list|get|members`
+- `mog teams list|channels|channel-send`
 - `mog tasks lists|list|get|create|update|complete|delete`
 - `mog onedrive ls|get|put|mkdir|rm`
 - `mog config get|keys|set|unset|list|path`
@@ -213,6 +216,14 @@ Groups:
 ```bash
 mog groups list --max 100
 mog groups members <group-id> --max 100
+```
+
+Teams:
+
+```bash
+mog teams list --max 100
+mog teams channels --team <team-id> --max 100
+mog teams channel-send --team <team-id> --channel <channel-id> --body "Deploy complete" --dry-run
 ```
 
 Tasks:
@@ -308,7 +319,7 @@ mog auth use <profile>
 Refresh delegated login:
 
 ```bash
-mog auth login --profile <profile> --audience enterprise --client-id <id> --scope-workloads mail,calendar,contacts,tasks,onedrive
+mog auth login --profile <profile> --audience enterprise --client-id <id> --scope-workloads mail,calendar,contacts,tasks,onedrive,teams
 ```
 
 Logout and reset profile auth state:

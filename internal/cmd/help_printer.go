@@ -178,7 +178,7 @@ func helpExamplesFor(selectedPath string) []string {
 	case "auth login":
 		return []string{
 			"$ mog auth login",
-			"$ mog auth login --profile work --audience enterprise --client-id <id> --scope-workloads mail,calendar",
+			"$ mog auth login --profile work --audience enterprise --client-id <id> --scope-workloads mail,calendar,teams",
 		}
 	case "auth update":
 		return []string{

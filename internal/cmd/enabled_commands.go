@@ -29,6 +29,28 @@ func enforceEnabledCommands(kctx *kong.Context, enabled string) error {
 	return nil
 }
 
+func enforceEnabledActions(kctx *kong.Context, enabled string) error {
+	enabled = strings.TrimSpace(enabled)
+	if enabled == "" {
+		return nil
+	}
+	allow := parseEnabledCommands(enabled)
+	if len(allow) == 0 {
+		return nil
+	}
+	if allow["*"] || allow["all"] {
+		return nil
+	}
+	action := commandAction(kctx)
+	if action == "" {
+		return nil
+	}
+	if !allow[action] {
+		return usagef("action %q is not enabled (set --enable-actions to allow it)", action)
+	}
+	return nil
+}
+
 func parseEnabledCommands(value string) map[string]bool {
 	out := map[string]bool{}
 	for _, part := range strings.Split(value, ",") {
@@ -39,4 +61,15 @@ func parseEnabledCommands(value string) map[string]bool {
 		out[part] = true
 	}
 	return out
+}
+
+func commandAction(kctx *kong.Context) string {
+	if kctx == nil {
+		return ""
+	}
+	parts := strings.Fields(strings.ToLower(strings.TrimSpace(kctx.Command())))
+	if len(parts) == 0 {
+		return ""
+	}
+	return strings.Join(parts, ".")
 }
