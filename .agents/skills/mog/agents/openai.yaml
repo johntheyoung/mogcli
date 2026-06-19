@@ -1,0 +1,4 @@
+interface:
+  display_name: "mog"
+  short_description: "Safe Microsoft 365 automation via mog"
+  default_prompt: "Use $mog to inspect Microsoft 365 auth and run a safe JSON read with mog."
