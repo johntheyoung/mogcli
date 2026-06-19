@@ -40,6 +40,9 @@ const (
 	capTeamsList      runtimeCapability = "teams.list"
 	capTeamsChannels  runtimeCapability = "teams.channels"
 	capTeamsSend      runtimeCapability = "teams.channel-send"
+	capTeamsChats     runtimeCapability = "teams.chats"
+	capTeamsChatSend  runtimeCapability = "teams.chat-send"
+	capTeamsDMSend    runtimeCapability = "teams.dm-send"
 	capTasksLists     runtimeCapability = "tasks.lists"
 	capTasksList      runtimeCapability = "tasks.list"
 	capTasksGet       runtimeCapability = "tasks.get"
@@ -88,6 +91,9 @@ var capabilityRules = map[runtimeCapability]capabilityRule{
 	capTeamsList:      teamsRule(),
 	capTeamsChannels:  teamsRule(),
 	capTeamsSend:      teamsRule(),
+	capTeamsChats:     teamsRule(),
+	capTeamsChatSend:  teamsRule(),
+	capTeamsDMSend:    teamsRule(),
 	capTasksLists:     delegatedOnlyRule(tasksAppOnlyMessage),
 	capTasksList:      delegatedOnlyRule(tasksAppOnlyMessage),
 	capTasksGet:       delegatedOnlyRule(tasksAppOnlyMessage),

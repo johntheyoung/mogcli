@@ -23,6 +23,46 @@ func TestTeamsChannelSendDryRunFlagParses(t *testing.T) {
 	}
 }
 
+func TestTeamsChatSendDryRunFlagParses(t *testing.T) {
+	parser, cli, err := newParser("test")
+	if err != nil {
+		t.Fatalf("newParser failed: %v", err)
+	}
+
+	args := []string{
+		"teams", "chat-send",
+		"--chat", "chat-id",
+		"--body", "Hello",
+		"--dry-run",
+	}
+	if _, err := parser.Parse(args); err != nil {
+		t.Fatalf("parse failed: %v", err)
+	}
+	if !cli.Teams.ChatSend.DryRun {
+		t.Fatal("expected --dry-run to set Teams chat-send dry-run flag")
+	}
+}
+
+func TestTeamsDMSendDryRunFlagParses(t *testing.T) {
+	parser, cli, err := newParser("test")
+	if err != nil {
+		t.Fatalf("newParser failed: %v", err)
+	}
+
+	args := []string{
+		"teams", "dm-send",
+		"--to", "target@contoso.com",
+		"--body", "Hello",
+		"--dry-run",
+	}
+	if _, err := parser.Parse(args); err != nil {
+		t.Fatalf("parse failed: %v", err)
+	}
+	if !cli.Teams.DMSend.DryRun {
+		t.Fatal("expected --dry-run to set Teams dm-send dry-run flag")
+	}
+}
+
 func TestEnableActionsAllowsSpecificSubcommand(t *testing.T) {
 	parser, cli, err := newParser("test")
 	if err != nil {
@@ -37,6 +77,27 @@ func TestEnableActionsAllowsSpecificSubcommand(t *testing.T) {
 
 	if err := enforceEnabledActions(kctx, cli.EnableActions); err != nil {
 		t.Fatalf("expected teams.list to be allowed: %v", err)
+	}
+}
+
+func TestEnableActionsAllowsDMSendSubcommand(t *testing.T) {
+	parser, cli, err := newParser("test")
+	if err != nil {
+		t.Fatalf("newParser failed: %v", err)
+	}
+
+	kctx, err := parser.Parse([]string{
+		"teams", "dm-send",
+		"--to", "target@contoso.com",
+		"--body", "Hello",
+	})
+	if err != nil {
+		t.Fatalf("parse failed: %v", err)
+	}
+	cli.EnableActions = "teams.dm-send"
+
+	if err := enforceEnabledActions(kctx, cli.EnableActions); err != nil {
+		t.Fatalf("expected teams.dm-send to be allowed: %v", err)
 	}
 }
 

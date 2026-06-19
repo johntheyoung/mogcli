@@ -12,7 +12,7 @@ Unofficial agent-friendly Microsoft 365 CLI
 - Stable scripting output modes: `--json` and `--plain`.
 - Interactive delegated wizard (`mog auth`), advanced app-only wizard (`mog auth app`), settings editor (`mog auth update`), and non-interactive login (`mog auth login`).
 - Per-command scope requests in delegated mode (progressive consent).
-- `--dry-run` previews for write operations in Mail, Calendar, and OneDrive.
+- `--dry-run` previews for write operations in Mail, Calendar, Teams, and OneDrive.
 
 ### Workload support matrix
 
@@ -31,7 +31,7 @@ Notes:
 - App-only mode is enterprise-only.
 - Calendar and tasks are intentionally blocked in app-only mode.
 - Groups are intentionally blocked for consumer profiles.
-- Teams commands are intentionally delegated-only because normal channel message sends act on behalf of the signed-in user.
+- Teams commands are intentionally delegated-only because channel and chat message sends act on behalf of the signed-in user.
 
 ## Install
 
@@ -164,7 +164,7 @@ The update flow shows current settings, lets you choose one field at a time to e
 - `mog calendar list|get|create|update|delete`
 - `mog contacts list|get|create|update|delete`
 - `mog groups list|get|members`
-- `mog teams list|channels|channel-send`
+- `mog teams list|channels|channel-send|chats|chat-send|dm-send`
 - `mog tasks lists|list|get|create|update|complete|delete`
 - `mog onedrive ls|get|put|mkdir|rm`
 - `mog config get|keys|set|unset|list|path`
@@ -224,6 +224,9 @@ Teams:
 mog teams list --max 100
 mog teams channels --team <team-id> --max 100
 mog teams channel-send --team <team-id> --channel <channel-id> --body "Deploy complete" --dry-run
+mog teams chats --max 50
+mog teams chat-send --chat <chat-id> --body "Deploy complete" --dry-run
+mog teams dm-send --to user@contoso.com --body "Deploy complete" --dry-run
 ```
 
 Tasks:

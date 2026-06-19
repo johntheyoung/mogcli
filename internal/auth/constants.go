@@ -46,6 +46,9 @@ var delegatedScopeWorkloadMap = map[string][]string{
 		"Team.ReadBasic.All",
 		"Channel.ReadBasic.All",
 		"ChannelMessage.Send",
+		"Chat.ReadBasic",
+		"Chat.Create",
+		"ChatMessage.Send",
 	},
 }
 
@@ -65,4 +68,7 @@ var AllDelegatedWorkloadScopes = []string{
 	"Team.ReadBasic.All",
 	"Channel.ReadBasic.All",
 	"ChannelMessage.Send",
+	"Chat.ReadBasic",
+	"Chat.Create",
+	"ChatMessage.Send",
 }
