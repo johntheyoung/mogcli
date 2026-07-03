@@ -226,8 +226,11 @@ mog teams channels --team <team-id> --max 100
 mog teams channel-send --team <team-id> --channel <channel-id> --body "Deploy complete" --dry-run
 mog teams chats --max 50
 mog teams chat-send --chat <chat-id> --body "Deploy complete" --dry-run
+mog teams chat-send --chat <chat-id> --body "Standup is ready" --mention "Jane Doe:<aad-object-id>" --dry-run
 mog teams dm-send --to user@contoso.com --body "Deploy complete" --dry-run
 ```
+
+For chat mentions, repeat `--mention "Display Name:<aad-object-id>"` for each Teams @mention. `chat-send` builds the Microsoft Graph HTML `<at>` tags and top-level `mentions` array; plain text bodies are escaped before mention tags are appended.
 
 Tasks:
 

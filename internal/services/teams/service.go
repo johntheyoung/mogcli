@@ -173,16 +173,18 @@ func (s *Service) OpenOneOnOneChat(ctx context.Context, targetUser string) (map[
 }
 
 func (s *Service) SendChatMessage(ctx context.Context, chatID string, body string, contentType string) (map[string]any, error) {
-	payload := map[string]any{
-		"body": map[string]any{
-			"contentType": normalizeContentType(contentType),
-			"content":     strings.TrimSpace(body),
-		},
+	return s.SendChatMessageWithMentions(ctx, chatID, body, contentType, nil)
+}
+
+func (s *Service) SendChatMessageWithMentions(ctx context.Context, chatID string, body string, contentType string, mentions []ChatMention) (map[string]any, error) {
+	payload, err := buildChatMentionsPayload(body, contentType, mentions)
+	if err != nil {
+		return nil, err
 	}
 
 	var created map[string]any
 	endpoint := "/chats/" + url.PathEscape(strings.TrimSpace(chatID)) + "/messages"
-	err := s.client.DoJSON(ctx, http.MethodPost, endpoint, nil, payload, sendChatMessageScopes, &created)
+	err = s.client.DoJSON(ctx, http.MethodPost, endpoint, nil, payload, sendChatMessageScopes, &created)
 	return created, err
 }
 

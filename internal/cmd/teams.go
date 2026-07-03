@@ -151,16 +151,21 @@ func (c *TeamsChannelSendCmd) Run(ctx context.Context) error {
 }
 
 type TeamsChatSendCmd struct {
-	Chat        string `name:"chat" required:"" help:"Chat ID"`
-	Body        string `name:"body" required:"" help:"Message body"`
-	ContentType string `name:"content-type" enum:"text,html" default:"text" help:"Message body content type"`
-	DryRun      bool   `name:"dry-run" help:"Preview send without posting the message"`
+	Chat        string   `name:"chat" required:"" help:"Chat ID"`
+	Body        string   `name:"body" required:"" help:"Message body"`
+	ContentType string   `name:"content-type" enum:"text,html" default:"text" help:"Message body content type"`
+	Mention     []string `name:"mention" help:"Teams @mention as Display Name:<aad-object-id> (repeat for multiple)"`
+	DryRun      bool     `name:"dry-run" help:"Preview send without posting the message"`
 }
 
 func (c *TeamsChatSendCmd) Run(ctx context.Context) error {
 	body := strings.TrimSpace(c.Body)
 	if body == "" {
 		return usage("--body is required")
+	}
+	mentions, err := teamsvc.ParseChatMentions(c.Mention)
+	if err != nil {
+		return usage(err.Error())
 	}
 
 	rt, err := resolveRuntime(ctx, capTeamsChatSend)
@@ -170,19 +175,17 @@ func (c *TeamsChatSendCmd) Run(ctx context.Context) error {
 
 	if c.DryRun {
 		if outfmt.IsJSON(ctx) {
-			return outfmt.WriteJSON(os.Stdout, map[string]any{
-				"dry_run":     true,
-				"action":      "teams.chat-send",
-				"chat":        c.Chat,
-				"contentType": c.ContentType,
-				"body_len":    len(body),
-			})
+			return outfmt.WriteJSON(os.Stdout, teamsChatSendDryRunPayload(c.Chat, body, c.ContentType, mentions))
+		}
+		if len(mentions) > 0 {
+			fmt.Fprintf(os.Stdout, "Dry run: would send Teams chat message to chat %s with %d mention(s): %s\n", c.Chat, len(mentions), strings.Join(teamsvc.ChatMentionDisplayNames(mentions), ", "))
+			return nil
 		}
 		fmt.Fprintf(os.Stdout, "Dry run: would send Teams chat message to chat %s\n", c.Chat)
 		return nil
 	}
 
-	item, err := teamsvc.New(rt.Graph).SendChatMessage(ctx, c.Chat, body, c.ContentType)
+	item, err := teamsvc.New(rt.Graph).SendChatMessageWithMentions(ctx, c.Chat, body, c.ContentType, mentions)
 	if err != nil {
 		return err
 	}
@@ -192,6 +195,24 @@ func (c *TeamsChatSendCmd) Run(ctx context.Context) error {
 	}
 	fmt.Fprintf(os.Stdout, "Sent Teams chat message %s\n", flattenValue(item["id"]))
 	return nil
+}
+
+func teamsChatSendDryRunPayload(chat string, body string, contentType string, mentions []teamsvc.ChatMention) map[string]any {
+	payload := map[string]any{
+		"dry_run":     true,
+		"action":      "teams.chat-send",
+		"chat":        chat,
+		"contentType": contentType,
+		"body_len":    len(body),
+	}
+	if len(mentions) == 0 {
+		return payload
+	}
+
+	payload["contentType"] = "html"
+	payload["mention_count"] = len(mentions)
+	payload["mention_display_names"] = teamsvc.ChatMentionDisplayNames(mentions)
+	return payload
 }
 
 type TeamsDMSendCmd struct {

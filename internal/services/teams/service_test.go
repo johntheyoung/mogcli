@@ -311,6 +311,9 @@ func TestSendChatMessagePostsPayloadAndScopes(t *testing.T) {
 		if body["content"] != "<b>Hello</b>" {
 			t.Fatalf("unexpected content: %#v", body["content"])
 		}
+		if _, ok := payload["mentions"]; ok {
+			t.Fatalf("expected no mentions for plain SendChatMessage, got %#v", payload["mentions"])
+		}
 
 		w.WriteHeader(http.StatusCreated)
 		_, _ = fmt.Fprint(w, `{"id":"message-id"}`)
@@ -327,6 +330,95 @@ func TestSendChatMessagePostsPayloadAndScopes(t *testing.T) {
 	item, err := New(client).SendChatMessage(context.Background(), "chat-id", " <b>Hello</b> ", "html")
 	if err != nil {
 		t.Fatalf("SendChatMessage failed: %v", err)
+	}
+	if item["id"] != "message-id" {
+		t.Fatalf("unexpected response item: %#v", item)
+	}
+	if len(gotScopes) != 1 || gotScopes[0] != "ChatMessage.Send" {
+		t.Fatalf("unexpected scopes: %#v", gotScopes)
+	}
+}
+
+func TestSendChatMessageWithMentionsPostsGraphMentionPayload(t *testing.T) {
+	t.Parallel()
+
+	var gotScopes []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Fatalf("unexpected method %s", r.Method)
+		}
+		if r.URL.Path != "/chats/chat-id/messages" {
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+
+		var payload map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Fatalf("decode body failed: %v", err)
+		}
+		body, ok := payload["body"].(map[string]any)
+		if !ok {
+			t.Fatalf("expected body map, got %#v", payload["body"])
+		}
+		if body["contentType"] != "html" {
+			t.Fatalf("unexpected contentType: %#v", body["contentType"])
+		}
+		wantContent := `Hello &lt;team&gt;<br><at id="0">Jane Doe</at> <at id="1">John Smith</at>`
+		if body["content"] != wantContent {
+			t.Fatalf("unexpected content:\ngot:  %#v\nwant: %#v", body["content"], wantContent)
+		}
+
+		mentions, ok := payload["mentions"].([]any)
+		if !ok || len(mentions) != 2 {
+			t.Fatalf("unexpected mentions: %#v", payload["mentions"])
+		}
+		first, ok := mentions[0].(map[string]any)
+		if !ok {
+			t.Fatalf("unexpected first mention: %#v", mentions[0])
+		}
+		if first["id"] != float64(0) {
+			t.Fatalf("unexpected first id: %#v", first["id"])
+		}
+		if first["mentionText"] != "Jane Doe" {
+			t.Fatalf("unexpected first mentionText: %#v", first["mentionText"])
+		}
+		mentioned, ok := first["mentioned"].(map[string]any)
+		if !ok {
+			t.Fatalf("unexpected mentioned payload: %#v", first["mentioned"])
+		}
+		user, ok := mentioned["user"].(map[string]any)
+		if !ok {
+			t.Fatalf("unexpected mentioned user: %#v", mentioned["user"])
+		}
+		if user["displayName"] != "Jane Doe" || user["id"] != "aad-user-1" || user["userIdentityType"] != "aadUser" {
+			t.Fatalf("unexpected mentioned user payload: %#v", user)
+		}
+
+		second, ok := mentions[1].(map[string]any)
+		if !ok {
+			t.Fatalf("unexpected second mention: %#v", mentions[1])
+		}
+		if second["id"] != float64(1) || second["mentionText"] != "John Smith" {
+			t.Fatalf("unexpected second mention payload: %#v", second)
+		}
+
+		w.WriteHeader(http.StatusCreated)
+		_, _ = fmt.Fprint(w, `{"id":"message-id"}`)
+	}))
+	defer server.Close()
+
+	client := graph.NewClient(func(_ context.Context, scopes []string) (string, error) {
+		gotScopes = scopes
+		return "token", nil
+	})
+	client.BaseURL = server.URL
+	client.HTTPClient = server.Client()
+
+	item, err := New(client).SendChatMessageWithMentions(context.Background(), "chat-id", " Hello <team> ", "text", []ChatMention{
+		{DisplayName: "Jane Doe", UserID: "aad-user-1"},
+		{DisplayName: "John Smith", UserID: "aad-user-2"},
+	})
+	if err != nil {
+		t.Fatalf("SendChatMessageWithMentions failed: %v", err)
 	}
 	if item["id"] != "message-id" {
 		t.Fatalf("unexpected response item: %#v", item)
