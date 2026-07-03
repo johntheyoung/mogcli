@@ -15,6 +15,7 @@ type TeamsCmd struct {
 	Channels    TeamsChannelsCmd    `cmd:"" help:"List channels in a team"`
 	ChannelSend TeamsChannelSendCmd `cmd:"" name:"channel-send" help:"Send a message to a team channel"`
 	Chats       TeamsChatsCmd       `cmd:"" help:"List Teams chats"`
+	ChatMembers TeamsChatMembersCmd `cmd:"" name:"chat-members" help:"List members in a Teams chat"`
 	ChatSend    TeamsChatSendCmd    `cmd:"" name:"chat-send" help:"Send a message to a Teams chat"`
 	DMSend      TeamsDMSendCmd      `cmd:"" name:"dm-send" help:"Send a direct Teams message"`
 }
@@ -100,6 +101,35 @@ func (c *TeamsChatsCmd) Run(ctx context.Context) error {
 		return outfmt.WriteJSON(os.Stdout, map[string]any{"chats": items, "next": next})
 	}
 	printItemTable(ctx, items, []string{"topic", "chatType", "id", "lastUpdatedDateTime", "webUrl"})
+	printNextPageHint(uiFromContext(ctx), next)
+	return nil
+}
+
+type TeamsChatMembersCmd struct {
+	Chat string `name:"chat" required:"" help:"Chat ID"`
+	Max  int    `name:"max" default:"50" help:"Maximum chat members"`
+	Page string `name:"page" aliases:"next-token" help:"Resume from next page token"`
+}
+
+func (c *TeamsChatMembersCmd) Run(ctx context.Context) error {
+	rt, err := resolveRuntime(ctx, capTeamsChatMembers)
+	if err != nil {
+		return err
+	}
+	page, err := normalizePageToken(c.Page)
+	if err != nil {
+		return err
+	}
+
+	items, next, err := teamsvc.New(rt.Graph).ChatMembers(ctx, c.Chat, c.Max, page)
+	if err != nil {
+		return err
+	}
+
+	if outfmt.IsJSON(ctx) {
+		return outfmt.WriteJSON(os.Stdout, map[string]any{"members": items, "next": next})
+	}
+	printItemTable(ctx, items, []string{"displayName", "email", "userId", "id", "roles"})
 	printNextPageHint(uiFromContext(ctx), next)
 	return nil
 }

@@ -159,6 +159,52 @@ func TestChannelsBuildsTeamEndpoint(t *testing.T) {
 	}
 }
 
+func TestChatMembersBuildsEndpointAndScopes(t *testing.T) {
+	t.Parallel()
+
+	var gotScopes []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			t.Fatalf("unexpected method %s", r.Method)
+		}
+		if r.URL.Path != "/chats/chat-id/messages" && r.URL.Path != "/chats/chat-id/members" {
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+		if r.URL.Path != "/chats/chat-id/members" {
+			t.Fatalf("expected chat members path, got %s", r.URL.Path)
+		}
+		if r.URL.Query().Get("$select") == "" {
+			t.Fatal("expected $select query")
+		}
+		if r.URL.Query().Get("$top") != "2" {
+			t.Fatalf("unexpected $top query: %q", r.URL.RawQuery)
+		}
+		_, _ = fmt.Fprint(w, `{"value":[{"displayName":"Jane Doe","userId":"aad-user-1","email":"jane@example.com"}]}`)
+	}))
+	defer server.Close()
+
+	client := graph.NewClient(func(_ context.Context, scopes []string) (string, error) {
+		gotScopes = scopes
+		return "token", nil
+	})
+	client.BaseURL = server.URL
+	client.HTTPClient = server.Client()
+
+	items, next, err := New(client).ChatMembers(context.Background(), "chat-id", 2, "")
+	if err != nil {
+		t.Fatalf("ChatMembers failed: %v", err)
+	}
+	if next != "" {
+		t.Fatalf("unexpected next: %s", next)
+	}
+	if len(items) != 1 || items[0]["userId"] != "aad-user-1" {
+		t.Fatalf("unexpected items: %#v", items)
+	}
+	if len(gotScopes) != 1 || gotScopes[0] != "ChatMember.Read" {
+		t.Fatalf("unexpected scopes: %#v", gotScopes)
+	}
+}
+
 func TestSendChannelMessagePostsPayloadAndScopes(t *testing.T) {
 	t.Parallel()
 

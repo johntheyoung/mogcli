@@ -28,6 +28,24 @@ func TestTeamsChannelSendDryRunFlagParses(t *testing.T) {
 	}
 }
 
+func TestTeamsChatMembersFlagParses(t *testing.T) {
+	parser, cli, err := newParser("test")
+	if err != nil {
+		t.Fatalf("newParser failed: %v", err)
+	}
+
+	args := []string{"teams", "chat-members", "--chat", "chat-id", "--max", "5"}
+	if _, err := parser.Parse(args); err != nil {
+		t.Fatalf("parse failed: %v", err)
+	}
+	if cli.Teams.ChatMembers.Chat != "chat-id" {
+		t.Fatalf("unexpected chat: %q", cli.Teams.ChatMembers.Chat)
+	}
+	if cli.Teams.ChatMembers.Max != 5 {
+		t.Fatalf("unexpected max: %d", cli.Teams.ChatMembers.Max)
+	}
+}
+
 func TestTeamsChatSendDryRunFlagParses(t *testing.T) {
 	parser, cli, err := newParser("test")
 	if err != nil {

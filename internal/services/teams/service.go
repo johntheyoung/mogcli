@@ -15,6 +15,7 @@ var listChannelsScopes = []string{"Channel.ReadBasic.All"}
 var sendChannelMessageScopes = []string{"ChannelMessage.Send"}
 var meScopes = []string{"User.Read"}
 var listChatsScopes = []string{"Chat.ReadBasic"}
+var listChatMembersScopes = []string{"ChatMember.Read"}
 var createChatScopes = []string{"Chat.Create"}
 var sendChatMessageScopes = []string{"ChatMessage.Send"}
 
@@ -88,6 +89,33 @@ func (s *Service) Chats(ctx context.Context, max int, page string) ([]map[string
 	}
 
 	_, body, err := s.client.Do(ctx, http.MethodGet, endpoint, query, nil, listChatsScopes, nil)
+	if err != nil {
+		return nil, "", err
+	}
+
+	items, next, err := graph.DecodeODataPage(body)
+	if err != nil {
+		return nil, "", err
+	}
+
+	trimmed, trimmedNext := trimPage(items, next, max)
+	return trimmed, trimmedNext, nil
+}
+
+func (s *Service) ChatMembers(ctx context.Context, chatID string, max int, page string) ([]map[string]any, string, error) {
+	query := url.Values{}
+	query.Set("$select", "id,displayName,email,userId,roles")
+	if max > 0 {
+		query.Set("$top", fmt.Sprintf("%d", chatPageSize(max)))
+	}
+
+	endpoint := "/chats/" + url.PathEscape(strings.TrimSpace(chatID)) + "/members"
+	if strings.TrimSpace(page) != "" {
+		endpoint = strings.TrimSpace(page)
+		query = nil
+	}
+
+	_, body, err := s.client.Do(ctx, http.MethodGet, endpoint, query, nil, listChatMembersScopes, nil)
 	if err != nil {
 		return nil, "", err
 	}

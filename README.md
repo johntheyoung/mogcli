@@ -164,7 +164,7 @@ The update flow shows current settings, lets you choose one field at a time to e
 - `mog calendar list|get|create|update|delete`
 - `mog contacts list|get|create|update|delete`
 - `mog groups list|get|members`
-- `mog teams list|channels|channel-send|chats|chat-send|dm-send`
+- `mog teams list|channels|channel-send|chats|chat-members|chat-send|dm-send`
 - `mog tasks lists|list|get|create|update|complete|delete`
 - `mog onedrive ls|get|put|mkdir|rm`
 - `mog config get|keys|set|unset|list|path`
@@ -225,6 +225,7 @@ mog teams list --max 100
 mog teams channels --team <team-id> --max 100
 mog teams channel-send --team <team-id> --channel <channel-id> --body "Deploy complete" --dry-run
 mog teams chats --max 50
+mog teams chat-members --chat <chat-id> --max 50
 mog teams chat-send --chat <chat-id> --body "Deploy complete" --dry-run
 mog teams chat-send --chat <chat-id> --body "Standup is ready" --mention "Jane Doe:<aad-object-id>" --dry-run
 mog teams dm-send --to user@contoso.com --body "Deploy complete" --dry-run
