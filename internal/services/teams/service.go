@@ -103,10 +103,7 @@ func (s *Service) Chats(ctx context.Context, max int, page string) ([]map[string
 }
 
 func (s *Service) ChatMembers(ctx context.Context, chatID string, max int, page string) ([]map[string]any, string, error) {
-	query := url.Values{}
-	if max > 0 {
-		query.Set("$top", fmt.Sprintf("%d", chatPageSize(max)))
-	}
+	var query url.Values
 
 	endpoint := "/chats/" + url.PathEscape(strings.TrimSpace(chatID)) + "/members"
 	if strings.TrimSpace(page) != "" {

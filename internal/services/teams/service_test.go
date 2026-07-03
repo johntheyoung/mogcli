@@ -173,11 +173,8 @@ func TestChatMembersBuildsEndpointAndScopes(t *testing.T) {
 		if r.URL.Path != "/chats/chat-id/members" {
 			t.Fatalf("expected chat members path, got %s", r.URL.Path)
 		}
-		if r.URL.Query().Get("$select") == "" {
-			t.Fatal("expected $select query")
-		}
-		if r.URL.Query().Get("$top") != "2" {
-			t.Fatalf("unexpected $top query: %q", r.URL.RawQuery)
+		if r.URL.RawQuery != "" {
+			t.Fatalf("expected no query options, got %q", r.URL.RawQuery)
 		}
 		_, _ = fmt.Fprint(w, `{"value":[{"displayName":"Jane Doe","userId":"aad-user-1","email":"jane@example.com"}]}`)
 	}))
