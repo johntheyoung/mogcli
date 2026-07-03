@@ -104,7 +104,7 @@ func (s *Service) Chats(ctx context.Context, max int, page string) ([]map[string
 
 func (s *Service) ChatMembers(ctx context.Context, chatID string, max int, page string) ([]map[string]any, string, error) {
 	query := url.Values{}
-	query.Set("$select", "id,displayName,email,userId,roles")
+	query.Set("$select", "id,displayName,userId,roles")
 	if max > 0 {
 		query.Set("$top", fmt.Sprintf("%d", chatPageSize(max)))
 	}
