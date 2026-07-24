@@ -1,9 +1,100 @@
 package cmd
 
 import (
+	"context"
+	"errors"
 	"strings"
 	"testing"
 )
+
+func TestMailReadFlagsParse(t *testing.T) {
+	t.Run("folder-scoped list", func(t *testing.T) {
+		parser, cli, err := newParser("test")
+		if err != nil {
+			t.Fatalf("newParser failed: %v", err)
+		}
+
+		args := []string{
+			"mail", "list",
+			"--folder", "inbox",
+			"--max", "50",
+			"--query", "isRead:false",
+		}
+		if _, err := parser.Parse(args); err != nil {
+			t.Fatalf("parse failed: %v", err)
+		}
+
+		if cli.Mail.List.Folder != "inbox" {
+			t.Fatalf("unexpected folder: %q", cli.Mail.List.Folder)
+		}
+		if cli.Mail.List.Max != 50 {
+			t.Fatalf("unexpected max: %d", cli.Mail.List.Max)
+		}
+		if cli.Mail.List.Query != "isRead:false" {
+			t.Fatalf("unexpected query: %q", cli.Mail.List.Query)
+		}
+	})
+
+	t.Run("folders include hidden and app-only user", func(t *testing.T) {
+		parser, cli, err := newParser("test")
+		if err != nil {
+			t.Fatalf("newParser failed: %v", err)
+		}
+
+		args := []string{
+			"mail", "folders",
+			"--include-hidden",
+			"--max", "25",
+			"--user", "person@example.com",
+		}
+		if _, err := parser.Parse(args); err != nil {
+			t.Fatalf("parse failed: %v", err)
+		}
+
+		if !cli.Mail.Folders.IncludeHidden {
+			t.Fatal("expected --include-hidden to be set")
+		}
+		if cli.Mail.Folders.Max != 25 {
+			t.Fatalf("unexpected max: %d", cli.Mail.Folders.Max)
+		}
+		if cli.Mail.Folders.User != "person@example.com" {
+			t.Fatalf("unexpected user: %q", cli.Mail.Folders.User)
+		}
+	})
+}
+
+func TestMailReadCommandsRejectUnboundedMax(t *testing.T) {
+	tests := []struct {
+		name string
+		run  func() error
+	}{
+		{
+			name: "messages",
+			run:  func() error { return (&MailListCmd{Max: 0}).Run(context.Background()) },
+		},
+		{
+			name: "folders",
+			run:  func() error { return (&MailFoldersCmd{Max: -1}).Run(context.Background()) },
+		},
+	}
+
+	for _, tc := range tests {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			err := tc.run()
+			if err == nil {
+				t.Fatal("expected usage error")
+			}
+			var exitErr *ExitError
+			if !errors.As(err, &exitErr) || exitErr.Code != 2 {
+				t.Fatalf("expected usage ExitError code 2, got %v", err)
+			}
+			if !strings.Contains(err.Error(), "--max must be greater than zero") {
+				t.Fatalf("unexpected error: %v", err)
+			}
+		})
+	}
+}
 
 func TestMailSendQuoteFlagParsesWithoutBody(t *testing.T) {
 	parser, cli, err := newParser("test")

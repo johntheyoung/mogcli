@@ -11,19 +11,24 @@ import (
 )
 
 type MailCmd struct {
-	List MailListCmd `cmd:"" help:"List messages"`
-	Get  MailGetCmd  `cmd:"" help:"Get message by ID"`
-	Send MailSendCmd `cmd:"" help:"Send a new message"`
+	List    MailListCmd    `cmd:"" help:"List messages"`
+	Folders MailFoldersCmd `cmd:"" help:"List top-level mail folders"`
+	Get     MailGetCmd     `cmd:"" help:"Get message by ID"`
+	Send    MailSendCmd    `cmd:"" help:"Send a new message"`
 }
 
 type MailListCmd struct {
-	Max   int    `name:"max" default:"20" help:"Maximum messages"`
-	Query string `name:"query" help:"Search query text"`
-	Page  string `name:"page" aliases:"next-token" help:"Resume from next page token"`
-	User  string `name:"user" help:"App-only target user override (UPN or user ID)"`
+	Max    int    `name:"max" default:"20" help:"Maximum messages requested for the initial page (ignored with --page)"`
+	Query  string `name:"query" help:"Search query text for the initial request"`
+	Folder string `name:"folder" help:"Initial folder ID or well-known name (for example inbox); omit for mailbox-wide messages"`
+	Page   string `name:"page" aliases:"next-token" help:"Resume from an opaque Graph next-page URL; initial request selectors are ignored"`
+	User   string `name:"user" help:"App-only target user override (UPN or user ID)"`
 }
 
 func (c *MailListCmd) Run(ctx context.Context) error {
+	if c.Max <= 0 {
+		return usage("--max must be greater than zero")
+	}
 	rt, err := resolveRuntime(ctx, capMailList)
 	if err != nil {
 		return err
@@ -38,7 +43,7 @@ func (c *MailListCmd) Run(ctx context.Context) error {
 	}
 
 	svc := mail.New(rt.Graph, targetUser)
-	items, next, err := svc.List(ctx, c.Max, c.Query, page)
+	items, next, err := svc.List(ctx, c.Max, c.Query, page, c.Folder)
 	if err != nil {
 		return err
 	}
@@ -48,6 +53,52 @@ func (c *MailListCmd) Run(ctx context.Context) error {
 	}
 
 	printItemTable(ctx, items, []string{"receivedDateTime", "subject", "id", "isRead"})
+	printNextPageHint(uiFromContext(ctx), next)
+	return nil
+}
+
+type MailFoldersCmd struct {
+	Max           int    `name:"max" default:"20" help:"Maximum folders requested for the initial page (ignored with --page)"`
+	Page          string `name:"page" aliases:"next-token" help:"Resume from an opaque Graph next-page URL; initial request selectors are ignored"`
+	IncludeHidden bool   `name:"include-hidden" help:"Include hidden folders in the initial request (excluded by default)"`
+	User          string `name:"user" help:"App-only target user override (UPN or user ID)"`
+}
+
+func (c *MailFoldersCmd) Run(ctx context.Context) error {
+	if c.Max <= 0 {
+		return usage("--max must be greater than zero")
+	}
+	rt, err := resolveRuntime(ctx, capMailFolders)
+	if err != nil {
+		return err
+	}
+	targetUser, err := resolveAppOnlyTargetUser(rt.Profile, c.User)
+	if err != nil {
+		return err
+	}
+	page, err := normalizePageToken(c.Page)
+	if err != nil {
+		return err
+	}
+
+	svc := mail.New(rt.Graph, targetUser)
+	items, next, err := svc.ListFolders(ctx, c.Max, page, c.IncludeHidden)
+	if err != nil {
+		return err
+	}
+
+	if outfmt.IsJSON(ctx) {
+		return outfmt.WriteJSON(os.Stdout, map[string]any{"folders": items, "next": next})
+	}
+
+	printItemTable(ctx, items, []string{
+		"id",
+		"displayName",
+		"parentFolderId",
+		"childFolderCount",
+		"totalItemCount",
+		"unreadItemCount",
+	})
 	printNextPageHint(uiFromContext(ctx), next)
 	return nil
 }

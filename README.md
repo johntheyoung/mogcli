@@ -160,7 +160,7 @@ The update flow shows current settings, lets you choose one field at a time to e
 - `mog auth`
 - `mog auth app`
 - `mog auth login|update|logout|accounts|use|whoami`
-- `mog mail list|get|send`
+- `mog mail folders|list|get|send`
 - `mog calendar list|get|create|update|delete`
 - `mog contacts list|get|create|update|delete`
 - `mog groups list|get|members`
@@ -175,12 +175,22 @@ The update flow shows current settings, lets you choose one field at a time to e
 Mail:
 
 ```bash
+mog mail folders --max 50
+mog mail folders --include-hidden --json
 mog mail list --max 50 --query "from:alerts@example.com"
+mog mail list --folder inbox --max 50
+mog mail list --folder <folder-id> --max 50
 mog mail get <message-id>
 mog mail send --to dev@contoso.com --subject "Deploy complete" --body "Finished."
 mog mail send --to dev@contoso.com --subject "Re: Deploy complete" --quote <message-id>
 mog mail send --to dev@contoso.com --subject "Deploy complete" --body "Finished." --dry-run
 ```
+
+`mog mail folders` lists top-level folders and their IDs, parent IDs, child counts, total item counts, and unread counts. Hidden folders are excluded by default; pass `--include-hidden` to request them explicitly.
+
+Without `--folder`, `mog mail list` preserves the mailbox-wide `/messages` behavior. Pass a Graph folder ID or well-known folder name such as `inbox` to use the folder-scoped messages endpoint. Message list responses include routing, conversation, recipient, timestamp, status, importance, flag, category, classification, attachment-presence, and web-link metadata, but never request message bodies or attachments. Mail folder/list/get reads request Outlook immutable IDs with `Prefer: IdType="ImmutableId"`.
+
+When the action guard is configured, folder discovery must be enabled explicitly as `mail.folders`; enabling `mail.list` does not authorize it.
 
 Calendar:
 
@@ -258,7 +268,9 @@ If `mog onedrive get` is run without `--out`, files are saved under the local `o
 App-only target user override (mail/contacts/onedrive):
 
 ```bash
+mog mail folders --user user@contoso.com --max 20
 mog mail list --user user@contoso.com --max 20
+mog mail list --user user@contoso.com --folder inbox --max 20
 mog onedrive ls --user user@contoso.com --path /
 ```
 
@@ -272,6 +284,8 @@ mog groups list --page "<next-token-url>"
 ```
 
 `--next-token` is also accepted as an alias for pagination resume flags where supported.
+
+Mail list and folder commands return one Microsoft Graph page per invocation. `--max` sets `$top` only for the initial request; Graph can return fewer items and still provide a `next` URL. Pass that opaque URL back with `--page` to continue. A resumed request uses the endpoint, filters, hidden-folder mode, and page sizing encoded by Graph in that URL instead of reapplying initial request selectors. The presence of fewer than `--max` results never implies complete coverage.
 
 Output modes:
 

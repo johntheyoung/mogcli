@@ -22,6 +22,7 @@ type runtimeCapability string
 
 const (
 	capMailList         runtimeCapability = "mail.list"
+	capMailFolders      runtimeCapability = "mail.folders"
 	capMailGet          runtimeCapability = "mail.get"
 	capMailSend         runtimeCapability = "mail.send"
 	capCalendarList     runtimeCapability = "calendar.list"
@@ -74,6 +75,7 @@ type capabilityRule struct {
 
 var capabilityRules = map[runtimeCapability]capabilityRule{
 	capMailList:         delegatedOrAppOnlyRule(),
+	capMailFolders:      delegatedOrAppOnlyRule(),
 	capMailGet:          delegatedOrAppOnlyRule(),
 	capMailSend:         delegatedOrAppOnlyRule(),
 	capCalendarList:     delegatedOnlyRule(calendarAppOnlyMessage),

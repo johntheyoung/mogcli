@@ -37,6 +37,14 @@ func TestValidateCapability(t *testing.T) {
 			capability: capMailList,
 		},
 		{
+			name: "enterprise app-only mail folders is allowed",
+			record: config.ProfileRecord{
+				Audience: profile.AudienceEnterprise,
+				AuthMode: profile.AuthModeAppOnly,
+			},
+			capability: capMailFolders,
+		},
+		{
 			name: "enterprise app-only groups list is allowed",
 			record: config.ProfileRecord{
 				Audience: profile.AudienceEnterprise,

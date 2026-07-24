@@ -71,5 +71,15 @@ func commandAction(kctx *kong.Context) string {
 	if len(parts) == 0 {
 		return ""
 	}
-	return strings.Join(parts, ".")
+	actionParts := make([]string, 0, len(parts))
+	for _, part := range parts {
+		// Kong represents positional resource values as schema placeholders
+		// such as <id>. They identify the target of an action, not a distinct
+		// capability, so keep only named commands in the canonical action.
+		if strings.HasPrefix(part, "<") && strings.HasSuffix(part, ">") {
+			continue
+		}
+		actionParts = append(actionParts, part)
+	}
+	return strings.Join(actionParts, ".")
 }

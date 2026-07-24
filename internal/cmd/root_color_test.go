@@ -64,6 +64,24 @@ func TestSubcommandHelpShowsInheritedFlagsAndExamples(t *testing.T) {
 	}
 }
 
+func TestMailFoldersHelpDocumentsHiddenAndPagingBehavior(t *testing.T) {
+	stdout, _, err := captureExecuteOutput(t, []string{"mail", "folders", "--help"})
+	if err != nil {
+		t.Fatalf("Execute(mail folders --help) failed: %v", err)
+	}
+	for _, expected := range []string{
+		"--include-hidden",
+		"--page",
+		"--max",
+		"opaque Graph next-page URL",
+		"EXAMPLES",
+	} {
+		if !strings.Contains(stdout, expected) {
+			t.Fatalf("expected mail folders help to contain %q, got:\n%s", expected, stdout)
+		}
+	}
+}
+
 func TestAuthHelpIncludesAppSubcommand(t *testing.T) {
 	stdout, _, err := captureExecuteOutput(t, []string{"auth", "--help"})
 	if err != nil {

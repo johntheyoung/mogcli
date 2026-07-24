@@ -98,6 +98,16 @@ func TestPaginationFlagsAcceptPageAndNextToken(t *testing.T) {
 			get:  func(cli *CLI) string { return cli.Mail.List.Page },
 		},
 		{
+			name: "mail folders --page",
+			args: []string{"mail", "folders", "--page", pageToken},
+			get:  func(cli *CLI) string { return cli.Mail.Folders.Page },
+		},
+		{
+			name: "mail folders --next-token",
+			args: []string{"mail", "folders", "--next-token", pageToken},
+			get:  func(cli *CLI) string { return cli.Mail.Folders.Page },
+		},
+		{
 			name: "calendar list --page",
 			args: []string{"calendar", "list", "--page", pageToken},
 			get:  func(cli *CLI) string { return cli.Calendar.List.Page },
