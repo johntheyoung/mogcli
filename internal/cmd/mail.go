@@ -11,8 +11,8 @@ import (
 )
 
 type MailCmd struct {
-	List    MailListCmd    `cmd:"" help:"List messages"`
-	Folders MailFoldersCmd `cmd:"" help:"List top-level mail folders"`
+	List    MailListCmd    `cmd:"" help:"List one page of messages; JSON reports complete/hasMore coverage"`
+	Folders MailFoldersCmd `cmd:"" help:"List one page of top-level folders; JSON reports complete/hasMore coverage"`
 	Get     MailGetCmd     `cmd:"" help:"Get message by ID"`
 	Send    MailSendCmd    `cmd:"" help:"Send a new message"`
 }
@@ -49,7 +49,7 @@ func (c *MailListCmd) Run(ctx context.Context) error {
 	}
 
 	if outfmt.IsJSON(ctx) {
-		return outfmt.WriteJSON(os.Stdout, map[string]any{"messages": items, "next": next})
+		return outfmt.WriteJSON(os.Stdout, mailPagePayload("messages", items, next))
 	}
 
 	printItemTable(ctx, items, []string{"receivedDateTime", "subject", "id", "isRead"})
@@ -88,7 +88,7 @@ func (c *MailFoldersCmd) Run(ctx context.Context) error {
 	}
 
 	if outfmt.IsJSON(ctx) {
-		return outfmt.WriteJSON(os.Stdout, map[string]any{"folders": items, "next": next})
+		return outfmt.WriteJSON(os.Stdout, mailPagePayload("folders", items, next))
 	}
 
 	printItemTable(ctx, items, []string{
@@ -101,6 +101,16 @@ func (c *MailFoldersCmd) Run(ctx context.Context) error {
 	})
 	printNextPageHint(uiFromContext(ctx), next)
 	return nil
+}
+
+func mailPagePayload(itemKey string, items []map[string]any, next string) map[string]any {
+	hasMore := strings.TrimSpace(next) != ""
+	return map[string]any{
+		itemKey:    items,
+		"next":     next,
+		"hasMore":  hasMore,
+		"complete": !hasMore,
+	}
 }
 
 type MailGetCmd struct {

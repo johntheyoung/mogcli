@@ -82,6 +82,18 @@ func TestMailFoldersHelpDocumentsHiddenAndPagingBehavior(t *testing.T) {
 	}
 }
 
+func TestMailHelpDocumentsJSONCoverageMetadata(t *testing.T) {
+	stdout, _, err := captureExecuteOutput(t, []string{"mail", "--help"})
+	if err != nil {
+		t.Fatalf("Execute(mail --help) failed: %v", err)
+	}
+	for _, expected := range []string{"complete", "hasMore"} {
+		if !strings.Contains(stdout, expected) {
+			t.Fatalf("expected mail help to contain %q, got:\n%s", expected, stdout)
+		}
+	}
+}
+
 func TestAuthHelpIncludesAppSubcommand(t *testing.T) {
 	stdout, _, err := captureExecuteOutput(t, []string{"auth", "--help"})
 	if err != nil {

@@ -16,15 +16,16 @@ import (
 )
 
 type RootFlags struct {
-	Profile        string `name:"use-profile" group:"inherited-flags" help:"Profile name override for API commands" default:"${profile}"`
-	Client         string `group:"inherited-flags" help:"Logical client registration name" default:"${client}"`
-	EnableCommands string `group:"inherited-flags" help:"Comma-separated list of enabled top-level commands (restricts CLI)" default:"${enabled_commands}"`
-	EnableActions  string `group:"inherited-flags" help:"Comma-separated list of enabled command actions (for example mail.list,teams.channel-send)" default:"${enabled_actions}"`
-	JSON           bool   `group:"inherited-flags" help:"Output JSON to stdout (best for scripting)" default:"${json}"`
-	Plain          bool   `group:"inherited-flags" help:"Output stable, parseable text to stdout (TSV)" default:"${plain}"`
-	Force          bool   `group:"inherited-flags" help:"Skip confirmations for destructive commands"`
-	NoInput        bool   `group:"inherited-flags" help:"Never prompt; fail instead (useful for CI)"`
-	Verbose        bool   `group:"inherited-flags" help:"Enable verbose logging"`
+	Profile           string `name:"use-profile" group:"inherited-flags" help:"Profile name override for API commands" default:"${profile}"`
+	Client            string `group:"inherited-flags" help:"Logical client registration name" default:"${client}"`
+	EnableCommands    string `group:"inherited-flags" help:"Comma-separated list of enabled top-level commands; required in managed automation" default:"${enabled_commands}"`
+	EnableActions     string `group:"inherited-flags" help:"Comma-separated list of enabled command actions; required in managed automation (for example mail.list,teams.channel-send)" default:"${enabled_actions}"`
+	ManagedAutomation bool   `name:"managed-automation" group:"inherited-flags" help:"Fail closed unless command and action allowlists are non-empty (also MOG_MANAGED_AUTOMATION=true)"`
+	JSON              bool   `group:"inherited-flags" help:"Output JSON to stdout (best for scripting)" default:"${json}"`
+	Plain             bool   `group:"inherited-flags" help:"Output stable, parseable text to stdout (TSV)" default:"${plain}"`
+	Force             bool   `group:"inherited-flags" help:"Skip confirmations for destructive commands"`
+	NoInput           bool   `group:"inherited-flags" help:"Never prompt; fail instead (useful for CI)"`
+	Verbose           bool   `group:"inherited-flags" help:"Enable verbose logging"`
 }
 
 type CLI struct {
@@ -81,11 +82,17 @@ func Execute(args []string) (err error) {
 		return parsedErr
 	}
 
-	if err = enforceEnabledCommands(kctx, cli.EnableCommands); err != nil {
+	managedMode, err := managedAutomationMode(cli.ManagedAutomation)
+	if err != nil {
 		_, _ = fmt.Fprintln(os.Stderr, errfmt.Format(err))
 		return err
 	}
-	if err = enforceEnabledActions(kctx, cli.EnableActions); err != nil {
+
+	if err = enforceEnabledCommands(kctx, cli.EnableCommands, managedMode); err != nil {
+		_, _ = fmt.Fprintln(os.Stderr, errfmt.Format(err))
+		return err
+	}
+	if err = enforceEnabledActions(kctx, cli.EnableActions, managedMode); err != nil {
 		_, _ = fmt.Fprintln(os.Stderr, errfmt.Format(err))
 		return err
 	}

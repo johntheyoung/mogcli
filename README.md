@@ -192,6 +192,19 @@ Without `--folder`, `mog mail list` preserves the mailbox-wide `/messages` behav
 
 When the action guard is configured, folder discovery must be enabled explicitly as `mail.folders`; enabling `mail.list` does not authorize it.
 
+### Managed automation guard
+
+Interactive CLI use remains unrestricted when no allowlists are configured. For a managed or headless process, opt in explicitly with `MOG_MANAGED_AUTOMATION=true` (or `--managed-automation`) and configure both allowlists:
+
+```bash
+MOG_MANAGED_AUTOMATION=true \
+MOG_ENABLE_COMMANDS=mail \
+MOG_ENABLE_ACTIONS=mail.folders,mail.list,mail.get \
+mog mail folders --json
+```
+
+Managed automation fails closed if either `MOG_ENABLE_COMMANDS` or `MOG_ENABLE_ACTIONS` is missing, empty, whitespace-only, or contains only empty comma-separated entries. This mode is never inferred from a TTY, `CI`, or another ambient environment variable. Use `all` or `*` explicitly if a managed process intentionally needs an unrestricted allowlist.
+
 Calendar:
 
 ```bash
@@ -286,6 +299,8 @@ mog groups list --page "<next-token-url>"
 `--next-token` is also accepted as an alias for pagination resume flags where supported.
 
 Mail list and folder commands return one Microsoft Graph page per invocation. `--max` sets `$top` only for the initial request; Graph can return fewer items and still provide a `next` URL. Pass that opaque URL back with `--page` to continue. A resumed request uses the endpoint, filters, hidden-folder mode, and page sizing encoded by Graph in that URL instead of reapplying initial request selectors. The presence of fewer than `--max` results never implies complete coverage.
+
+Their JSON responses retain the existing `messages` or `folders` collection and opaque `next` URL, and also report page coverage explicitly: `hasMore` is true and `complete` is false when Graph supplied `@odata.nextLink`; otherwise `hasMore` is false and `complete` is true. These fields describe coverage of the requested list across Graph pages, not recursive child-folder traversal.
 
 Output modes:
 

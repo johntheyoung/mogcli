@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"errors"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -91,6 +92,38 @@ func TestMailReadCommandsRejectUnboundedMax(t *testing.T) {
 			}
 			if !strings.Contains(err.Error(), "--max must be greater than zero") {
 				t.Fatalf("unexpected error: %v", err)
+			}
+		})
+	}
+}
+
+func TestMailPagePayloadReportsCoverageFromNextLink(t *testing.T) {
+	items := []map[string]any{{"id": "1"}}
+	tests := []struct {
+		name         string
+		itemKey      string
+		next         string
+		wantComplete bool
+		wantHasMore  bool
+	}{
+		{name: "message page continues", itemKey: "messages", next: "https://graph.microsoft.com/messages/next", wantHasMore: true},
+		{name: "folder page is complete", itemKey: "folders", wantComplete: true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			payload := mailPagePayload(tc.itemKey, items, tc.next)
+			if payload["next"] != tc.next {
+				t.Fatalf("opaque next link changed: got %#v want %q", payload["next"], tc.next)
+			}
+			if payload["complete"] != tc.wantComplete {
+				t.Fatalf("unexpected complete metadata: %#v", payload["complete"])
+			}
+			if payload["hasMore"] != tc.wantHasMore {
+				t.Fatalf("unexpected hasMore metadata: %#v", payload["hasMore"])
+			}
+			if !reflect.DeepEqual(payload[tc.itemKey], items) {
+				t.Fatalf("existing item field changed: %#v", payload[tc.itemKey])
 			}
 		})
 	}

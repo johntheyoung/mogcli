@@ -156,7 +156,7 @@ func TestEnableActionsAllowsSpecificSubcommand(t *testing.T) {
 	}
 	cli.EnableActions = "teams.list"
 
-	if err := enforceEnabledActions(kctx, cli.EnableActions); err != nil {
+	if err := enforceEnabledActions(kctx, cli.EnableActions, false); err != nil {
 		t.Fatalf("expected teams.list to be allowed: %v", err)
 	}
 }
@@ -177,7 +177,7 @@ func TestEnableActionsAllowsDMSendSubcommand(t *testing.T) {
 	}
 	cli.EnableActions = "teams.dm-send"
 
-	if err := enforceEnabledActions(kctx, cli.EnableActions); err != nil {
+	if err := enforceEnabledActions(kctx, cli.EnableActions, false); err != nil {
 		t.Fatalf("expected teams.dm-send to be allowed: %v", err)
 	}
 }
@@ -199,7 +199,7 @@ func TestEnableActionsBlocksUnlistedSubcommand(t *testing.T) {
 	}
 	cli.EnableActions = "teams.list,teams.channels"
 
-	if err := enforceEnabledActions(kctx, cli.EnableActions); err == nil {
+	if err := enforceEnabledActions(kctx, cli.EnableActions, false); err == nil {
 		t.Fatal("expected teams.channel-send to be blocked")
 	}
 }

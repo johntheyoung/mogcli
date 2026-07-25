@@ -37,6 +37,7 @@ mog auth status
 - Use `--json` for reads and dry runs that an agent will parse.
 - Use `--dry-run` first where commands support it.
 - Use `--enable-commands` and `--enable-actions` to narrow what an agent can do.
+- For managed/headless execution, set `MOG_MANAGED_AUTOMATION=true`; it fails closed unless both `MOG_ENABLE_COMMANDS` and `MOG_ENABLE_ACTIONS` are non-empty. This mode is explicit and is not inferred from TTY or `CI` state.
 - Do not send mail, create/update/delete calendar events, post Teams messages, or mutate contacts/files unless the user asked for that exact action.
 - For ambiguous write requests, preview the target, body, recipients, and action first.
 - Do not add `--force` unless the user explicitly asked for the destructive mutation.

@@ -1,6 +1,11 @@
 package cmd
 
-import "testing"
+import (
+	"strings"
+	"testing"
+
+	"github.com/alecthomas/kong"
+)
 
 func TestCommandActionCanonicalizesPositionalResources(t *testing.T) {
 	tests := []struct {
@@ -137,7 +142,7 @@ func TestEnableActionsAuthorizesCanonicalPositionalActionOnly(t *testing.T) {
 				t.Fatalf("parse failed: %v", err)
 			}
 
-			err = enforceEnabledActions(kctx, tc.enabled)
+			err = enforceEnabledActions(kctx, tc.enabled, false)
 			if tc.wantErr && err == nil {
 				t.Fatal("expected action to be blocked")
 			}
@@ -146,4 +151,97 @@ func TestEnableActionsAuthorizesCanonicalPositionalActionOnly(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestAutomationGuardsRemainUnrestrictedWithoutManagedSignal(t *testing.T) {
+	kctx := parseGuardTestCommand(t, []string{"mail", "get", "message-id"})
+
+	if err := enforceEnabledCommands(kctx, "", false); err != nil {
+		t.Fatalf("interactive command guard should be unrestricted: %v", err)
+	}
+	if err := enforceEnabledActions(kctx, "", false); err != nil {
+		t.Fatalf("interactive action guard should be unrestricted: %v", err)
+	}
+}
+
+func TestAutomationGuardsFailClosedInManagedModeWithMissingOrEmptyAllowlists(t *testing.T) {
+	kctx := parseGuardTestCommand(t, []string{"mail", "get", "message-id"})
+
+	for _, enabled := range []string{"", "  ", ", ,"} {
+		if err := enforceEnabledCommands(kctx, enabled, true); err == nil || !strings.Contains(err.Error(), "MOG_ENABLE_COMMANDS") {
+			t.Fatalf("managed command guard should reject %q with guidance, got %v", enabled, err)
+		}
+		if err := enforceEnabledActions(kctx, enabled, true); err == nil || !strings.Contains(err.Error(), "MOG_ENABLE_ACTIONS") {
+			t.Fatalf("managed action guard should reject %q with guidance, got %v", enabled, err)
+		}
+	}
+}
+
+func TestAutomationGuardsHonorExplicitManagedAllowlists(t *testing.T) {
+	kctx := parseGuardTestCommand(t, []string{"mail", "get", "message-id"})
+
+	if err := enforceEnabledCommands(kctx, "mail", true); err != nil {
+		t.Fatalf("managed command allowlist should permit mail: %v", err)
+	}
+	if err := enforceEnabledActions(kctx, "mail.get", true); err != nil {
+		t.Fatalf("managed action allowlist should permit normalized positional action: %v", err)
+	}
+}
+
+func TestManagedAutomationModeUsesOnlyExplicitSignal(t *testing.T) {
+	t.Setenv(managedAutomationEnv, "")
+	managed, err := managedAutomationMode(false)
+	if err != nil || managed {
+		t.Fatalf("empty signal should leave interactive mode unrestricted: managed=%v err=%v", managed, err)
+	}
+
+	t.Setenv(managedAutomationEnv, "true")
+	managed, err = managedAutomationMode(false)
+	if err != nil || !managed {
+		t.Fatalf("explicit signal should enable managed mode: managed=%v err=%v", managed, err)
+	}
+
+	t.Setenv(managedAutomationEnv, "not-a-boolean")
+	if _, err := managedAutomationMode(false); err == nil {
+		t.Fatal("invalid explicit managed automation signal should fail")
+	}
+}
+
+func TestExecuteManagedAutomationRequiresBothAllowlists(t *testing.T) {
+	t.Setenv(managedAutomationEnv, "true")
+	t.Setenv("MOG_ENABLE_COMMANDS", "")
+	t.Setenv("MOG_ENABLE_ACTIONS", "")
+
+	_, stderr, err := captureExecuteOutput(t, []string{"version"})
+	if err == nil || !strings.Contains(stderr, "MOG_ENABLE_COMMANDS") {
+		t.Fatalf("managed execution should fail closed on missing command allowlist: err=%v stderr=%q", err, stderr)
+	}
+
+	t.Setenv("MOG_ENABLE_COMMANDS", "version")
+	_, stderr, err = captureExecuteOutput(t, []string{"version"})
+	if err == nil || !strings.Contains(stderr, "MOG_ENABLE_ACTIONS") {
+		t.Fatalf("managed execution should fail closed on missing action allowlist: err=%v stderr=%q", err, stderr)
+	}
+
+	t.Setenv("MOG_ENABLE_ACTIONS", "version")
+	stdout, stderr, err := captureExecuteOutput(t, []string{"version"})
+	if err != nil {
+		t.Fatalf("managed execution with explicit allowlists failed: %v stderr=%q", err, stderr)
+	}
+	if !strings.Contains(stdout, "mog version") {
+		t.Fatalf("unexpected version output: %q", stdout)
+	}
+}
+
+func parseGuardTestCommand(t *testing.T, args []string) *kong.Context {
+	t.Helper()
+	parser, _, err := newParser("test")
+	if err != nil {
+		t.Fatalf("newParser failed: %v", err)
+	}
+	kctx, err := parser.Parse(args)
+	if err != nil {
+		t.Fatalf("parse failed: %v", err)
+	}
+	return kctx
 }
