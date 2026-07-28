@@ -17,6 +17,42 @@ import (
 
 type TokenProvider func(ctx context.Context, scopes []string) (string, error)
 
+// RequestOptions controls behavior that must be selected for an individual
+// Graph request.
+type RequestOptions struct {
+	// DisableRetries prevents automatic retries for non-idempotent requests.
+	DisableRetries bool
+}
+
+// TransportError means the HTTP transport failed after the request was handed
+// to http.Client. For non-idempotent writes, the server-side outcome may be
+// indeterminate.
+type TransportError struct {
+	Err error
+}
+
+func (e *TransportError) Error() string {
+	return fmt.Sprintf("request graph: %v", e.Err)
+}
+
+func (e *TransportError) Unwrap() error {
+	return e.Err
+}
+
+// ResponseReadError means Graph returned an HTTP response but its body could
+// not be read completely.
+type ResponseReadError struct {
+	Err error
+}
+
+func (e *ResponseReadError) Error() string {
+	return fmt.Sprintf("read response: %v", e.Err)
+}
+
+func (e *ResponseReadError) Unwrap() error {
+	return e.Err
+}
+
 // Client wraps Microsoft Graph HTTP behavior including auth, retry, and paging.
 type Client struct {
 	BaseURL       string
@@ -58,7 +94,11 @@ func (c *Client) baseURL() string {
 }
 
 func (c *Client) DoJSON(ctx context.Context, method string, path string, query url.Values, body any, scopes []string, out any) error {
-	_, b, err := c.Do(ctx, method, path, query, body, scopes, nil)
+	return c.DoJSONWithOptions(ctx, method, path, query, body, scopes, out, RequestOptions{})
+}
+
+func (c *Client) DoJSONWithOptions(ctx context.Context, method string, path string, query url.Values, body any, scopes []string, out any, options RequestOptions) error {
+	_, b, err := c.DoWithOptions(ctx, method, path, query, body, scopes, nil, options)
 	if err != nil {
 		return err
 	}
@@ -78,12 +118,16 @@ func (c *Client) DoJSON(ctx context.Context, method string, path string, query u
 }
 
 func (c *Client) Do(ctx context.Context, method string, path string, query url.Values, body any, scopes []string, headers http.Header) (*http.Response, []byte, error) {
+	return c.DoWithOptions(ctx, method, path, query, body, scopes, headers, RequestOptions{})
+}
+
+func (c *Client) DoWithOptions(ctx context.Context, method string, path string, query url.Values, body any, scopes []string, headers http.Header, options RequestOptions) (*http.Response, []byte, error) {
 	if c.TokenProvider == nil {
 		return nil, nil, errors.New("missing token provider")
 	}
 
 	if c.Breaker == nil {
-		resp, payload, _, err := c.doWithRetry(ctx, method, path, query, body, scopes, headers)
+		resp, payload, _, err := c.doWithRetry(ctx, method, path, query, body, scopes, headers, options)
 		return resp, payload, err
 	}
 
@@ -92,7 +136,7 @@ func (c *Client) Do(ctx context.Context, method string, path string, query url.V
 	err := c.Breaker.Execute(func() (bool, error) {
 		var recordFailure bool
 		var callErr error
-		resp, payload, recordFailure, callErr = c.doWithRetry(ctx, method, path, query, body, scopes, headers)
+		resp, payload, recordFailure, callErr = c.doWithRetry(ctx, method, path, query, body, scopes, headers, options)
 		return recordFailure, callErr
 	})
 	if err != nil {
@@ -110,14 +154,21 @@ func (c *Client) doWithRetry(
 	body any,
 	scopes []string,
 	headers http.Header,
+	options RequestOptions,
 ) (*http.Response, []byte, bool, error) {
 	retries429 := 0
 	retries5xx := 0
+	maxRetries429 := c.MaxRetries429
+	maxRetries5xx := c.MaxRetries5xx
+	if options.DisableRetries {
+		maxRetries429 = 0
+		maxRetries5xx = 0
+	}
 
 	for {
 		resp, b, err := c.doOnce(ctx, method, path, query, body, scopes, headers)
 		if err != nil {
-			return nil, nil, true, err
+			return resp, nil, true, err
 		}
 
 		if resp.StatusCode < 400 {
@@ -125,7 +176,7 @@ func (c *Client) doWithRetry(
 		}
 
 		if resp.StatusCode == http.StatusTooManyRequests {
-			if retries429 >= c.MaxRetries429 {
+			if retries429 >= maxRetries429 {
 				apiErr := parseAPIError(resp.StatusCode, b)
 				return resp, b, false, apiErr
 			}
@@ -139,7 +190,7 @@ func (c *Client) doWithRetry(
 		}
 
 		if resp.StatusCode >= 500 {
-			if retries5xx >= c.MaxRetries5xx {
+			if retries5xx >= maxRetries5xx {
 				apiErr := parseAPIError(resp.StatusCode, b)
 				return resp, b, true, apiErr
 			}
@@ -208,13 +259,13 @@ func (c *Client) doOnce(ctx context.Context, method string, path string, query u
 
 	resp, err := c.httpClient().Do(req)
 	if err != nil {
-		return nil, nil, fmt.Errorf("request graph: %w", err)
+		return nil, nil, &TransportError{Err: err}
 	}
 	defer resp.Body.Close()
 
 	b, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, nil, fmt.Errorf("read response: %w", err)
+		return resp, nil, &ResponseReadError{Err: err}
 	}
 
 	return resp, b, nil

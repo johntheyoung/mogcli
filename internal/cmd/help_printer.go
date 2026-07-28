@@ -213,6 +213,11 @@ func helpExamplesFor(selectedPath string) []string {
 		return []string{
 			"$ mog onedrive ls --path /Documents --max 50",
 		}
+	case "teams chat-file-send":
+		return []string{
+			"$ mog teams chat-file-send --chat <chat-id> --file ./report.pdf --dry-run --json",
+			"$ mog teams chat-file-send --chat <chat-id> --file ./report.pdf --name \"Quarterly report.pdf\" --body \"Please review\" --json",
+		}
 	}
 
 	return nil

@@ -164,7 +164,7 @@ The update flow shows current settings, lets you choose one field at a time to e
 - `mog calendar list|get|create|update|delete`
 - `mog contacts list|get|create|update|delete`
 - `mog groups list|get|members`
-- `mog teams list|channels|channel-send|chats|chat-members|chat-send|dm-send`
+- `mog teams list|channels|channel-send|chats|chat-members|chat-send|chat-file-send|dm-send`
 - `mog tasks lists|list|get|create|update|complete|delete`
 - `mog onedrive ls|get|put|mkdir|rm`
 - `mog config get|keys|set|unset|list|path`
@@ -251,10 +251,29 @@ mog teams chats --max 50
 mog teams chat-members --chat <chat-id> --max 50
 mog teams chat-send --chat <chat-id> --body "Deploy complete" --dry-run
 mog teams chat-send --chat <chat-id> --body "Standup is ready" --mention "Jane Doe:<aad-object-id>" --dry-run
+mog teams chat-file-send --chat <chat-id> --file ./report.pdf --dry-run --json
+mog teams chat-file-send --chat <chat-id> --file ./report.pdf --name "Quarterly report.pdf" --body "Please review" --json
 mog teams dm-send --to user@contoso.com --body "Deploy complete" --dry-run
 ```
 
 For chat mentions, repeat `--mention "Display Name:<aad-object-id>"` for each Teams @mention. `chat-send` builds the Microsoft Graph HTML `<at>` tags and top-level `mentions` array; plain text bodies are escaped before mention tags are appended.
+
+`teams chat-file-send` is an enterprise-delegated, one-on-one-only file send. The caller supplies an existing chat ID. Before uploading, mog resolves `/me`, confirms the chat resource has `chatType: oneOnOne`, and requires exactly the signed-in internal member plus one other same-tenant AAD member with an immutable `userId`. Guest, external, paged, incomplete, or ambiguous membership responses fail closed. The command never selects a recipient from an ambiguous member list.
+
+The profile must be authorized for both the `teams` and `onedrive` delegated workloads. The operation uses the existing delegated permissions `User.Read`, `Chat.ReadBasic` (to read and verify `chatType`), `ChatMember.Read`, `Files.ReadWrite`, and `ChatMessage.Send`. It does not use `User.ReadBasic.All`, tenant-wide file/site write permissions, application permissions, anonymous links, or organization-wide links. In managed automation, enable the separate action `teams.chat-file-send`; `teams.chat-send`, `teams.dm-send`, and `onedrive.put` do not authorize it:
+
+```bash
+MOG_MANAGED_AUTOMATION=true \
+MOG_ENABLE_COMMANDS=teams \
+MOG_ENABLE_ACTIONS=teams.chat-file-send \
+mog teams chat-file-send --chat <chat-id> --file ./report.pdf --dry-run --json
+```
+
+The default attachment name is the local basename; `--name` overrides it after strict filename validation, including rejection of Unicode formatting controls that can visually spoof names. The optional `--body` is treated as short text (maximum 4096 bytes), HTML-escaped, and sent as HTML only so Teams can receive the required `<attachment>` marker. Local files are checked with `lstat`: symlinks and non-regular files are rejected, the maximum is 50 MiB, and mog hashes the exact bytes with SHA-256 without emitting file content or the full local parent path.
+
+Dry run is entirely local: it validates and hashes the file but acquires no token, makes no Graph call, and does not validate the remote chat or recipient. Its JSON reports the planned stages, `conflict_policy: "fail"`, direct sign-in-required read permission policy with `retain_inherited_permissions: false`, and rollback policy.
+
+On a live run, mog uploads a uniquely and neutrally named item under its private OneDrive app folder using simple upload with conflict behavior `fail`, reads the item back by ID to verify byte count and SHA-256, and grants only the verified other member direct read access (`requireSignIn: true`, `sendInvitation: false`, `retainInheritedPermissions: false`). Before sending, mog lists the resulting permissions and fails closed unless it can prove the item has exactly the recipient's new direct read grant plus at most the signed-in user's explicit owner grant—no inherited grants, other users/groups, or sharing links of any scope. Graph can create the app folder on first access; mog treats that folder as shared managed infrastructure and never removes it during per-send rollback. Failures before a confirmed message HTTP 201 remove only the permission and drive item created by that operation. An indeterminate final-send transport failure or server-side 5xx response is never retried and preserves the backing item and permission to avoid breaking a message that may have been delivered. Successfully sent backing files also remain in OneDrive and count against the user's quota.
 
 Tasks:
 

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"testing"
 
 	"github.com/jaredpalmer/mogcli/internal/graph"
@@ -543,5 +544,127 @@ func TestOpenOneOnOneChatUsesMeThenCreatesChat(t *testing.T) {
 	}
 	if len(gotScopes[1]) != 1 || gotScopes[1][0] != "Chat.Create" {
 		t.Fatalf("unexpected /chats scopes: %#v", gotScopes[1])
+	}
+}
+
+func TestTypedChatVerificationReadsAndReferenceAttachmentPayload(t *testing.T) {
+	t.Parallel()
+
+	var gotMessagePayload map[string]any
+	var gotScopes [][]string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/me":
+			if got := r.URL.Query().Get("$select"); got != "id,displayName,mail,userPrincipalName,userType" {
+				t.Fatalf("unexpected /me select: %q", got)
+			}
+			_, _ = fmt.Fprint(w, `{"id":"self-id","displayName":"Self","userType":"Member"}`)
+		case r.Method == http.MethodGet && r.URL.Path == "/chats/chat-id":
+			if r.URL.RawQuery != "" {
+				t.Fatalf("get chat does not support OData query parameters, got %q", r.URL.RawQuery)
+			}
+			_, _ = fmt.Fprint(w, `{"id":"chat-id","chatType":"oneOnOne"}`)
+		case r.Method == http.MethodGet && r.URL.Path == "/chats/chat-id/members":
+			_, _ = fmt.Fprint(w, `{"value":[{"@odata.type":"#microsoft.graph.aadUserConversationMember","userId":"self-id","tenantId":"tenant-id","roles":["owner"]},{"@odata.type":"#microsoft.graph.aadUserConversationMember","userId":"recipient-id","tenantId":"tenant-id","roles":["owner"]}]}`)
+		case r.Method == http.MethodPost && r.URL.Path == "/chats/chat-id/messages":
+			if err := json.NewDecoder(r.Body).Decode(&gotMessagePayload); err != nil {
+				t.Fatalf("decode message payload: %v", err)
+			}
+			w.WriteHeader(http.StatusCreated)
+			_, _ = fmt.Fprint(w, `{"id":"message-id"}`)
+		default:
+			t.Fatalf("unexpected %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	client := graph.NewClient(func(_ context.Context, scopes []string) (string, error) {
+		gotScopes = append(gotScopes, append([]string(nil), scopes...))
+		return "token", nil
+	})
+	client.BaseURL = server.URL
+	client.HTTPClient = server.Client()
+	svc := New(client)
+
+	current, err := svc.CurrentUser(context.Background())
+	if err != nil || current.ID != "self-id" {
+		t.Fatalf("CurrentUser failed: current=%#v err=%v", current, err)
+	}
+	chat, err := svc.Chat(context.Background(), "chat-id")
+	if err != nil || chat.ChatType != "oneOnOne" {
+		t.Fatalf("Chat failed: chat=%#v err=%v", chat, err)
+	}
+	members, next, err := svc.ChatMembersForVerification(context.Background(), "chat-id")
+	if err != nil || next != "" || len(members) != 2 {
+		t.Fatalf("ChatMembersForVerification failed: members=%#v next=%q err=%v", members, next, err)
+	}
+	message, err := svc.SendReferenceAttachment(context.Background(), "chat-id", "Hi <all> &\nsecond", ReferenceAttachment{
+		ID:         "item-id",
+		ContentURL: "https://contoso.example/item?a=1&b=2",
+		Name:       `report & "notes".txt`,
+	})
+	if err != nil || message.ID != "message-id" {
+		t.Fatalf("SendReferenceAttachment failed: message=%#v err=%v", message, err)
+	}
+
+	body, ok := gotMessagePayload["body"].(map[string]any)
+	if !ok {
+		t.Fatalf("unexpected body: %#v", gotMessagePayload["body"])
+	}
+	wantHTML := `Hi &lt;all&gt; &amp;<br>second<br><attachment id="item-id"></attachment>`
+	if body["contentType"] != "html" || body["content"] != wantHTML {
+		t.Fatalf("unexpected message body: %#v", body)
+	}
+	attachments, ok := gotMessagePayload["attachments"].([]any)
+	if !ok || len(attachments) != 1 {
+		t.Fatalf("expected one attachment, got %#v", gotMessagePayload["attachments"])
+	}
+	attachment, ok := attachments[0].(map[string]any)
+	if !ok {
+		t.Fatalf("unexpected attachment: %#v", attachments[0])
+	}
+	if attachment["id"] != "item-id" ||
+		attachment["contentType"] != "reference" ||
+		attachment["contentUrl"] != "https://contoso.example/item?a=1&b=2" ||
+		attachment["name"] != `report & "notes".txt` {
+		t.Fatalf("unexpected attachment payload: %#v", attachment)
+	}
+	wantScopes := [][]string{
+		{"User.Read"},
+		{"Chat.ReadBasic"},
+		{"ChatMember.Read"},
+		{"ChatMessage.Send"},
+	}
+	if !reflect.DeepEqual(gotScopes, wantScopes) {
+		t.Fatalf("unexpected least-privilege request scopes: got %#v want %#v", gotScopes, wantScopes)
+	}
+}
+
+func TestReferenceAttachmentSendDoesNotRetry(t *testing.T) {
+	t.Parallel()
+
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		requests++
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = fmt.Fprint(w, `{"error":{"code":"busy","message":"try later"}}`)
+	}))
+	defer server.Close()
+
+	client := graph.NewClient(func(context.Context, []string) (string, error) { return "token", nil })
+	client.BaseURL = server.URL
+	client.HTTPClient = server.Client()
+	client.MaxRetries5xx = 3
+
+	_, err := New(client).SendReferenceAttachment(context.Background(), "chat-id", "", ReferenceAttachment{
+		ID:         "item-id",
+		ContentURL: "https://contoso.example/item",
+		Name:       "report.txt",
+	})
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if requests != 1 {
+		t.Fatalf("final send must not retry; got %d requests", requests)
 	}
 }
