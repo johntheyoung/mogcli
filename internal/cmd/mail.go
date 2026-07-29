@@ -258,7 +258,7 @@ func (c *MailMarkReadCmd) Run(ctx context.Context) error {
 			"action":  "mail.mark-read",
 			"id":      id,
 			"is_read": true,
-			"message": updated,
+			"message": mailMutationSummary(updated),
 		})
 	}
 	fmt.Fprintf(os.Stdout, "Marked message %s as read\n", id)
@@ -284,7 +284,7 @@ func renderMailMoveResult(ctx context.Context, action string, verb string, id st
 			"action":      action,
 			"destination": destination,
 			"id":          id,
-			"message":     moved,
+			"message":     mailMutationSummary(moved),
 		})
 	}
 	fmt.Fprintf(
@@ -296,6 +296,27 @@ func renderMailMoveResult(ctx context.Context, action string, verb string, id st
 		flattenValue(moved["id"]),
 	)
 	return nil
+}
+
+func mailMutationSummary(message map[string]any) map[string]any {
+	keys := []string{
+		"id",
+		"parentFolderId",
+		"subject",
+		"isRead",
+		"receivedDateTime",
+		"sentDateTime",
+		"hasAttachments",
+		"webLink",
+	}
+
+	summary := make(map[string]any, len(keys))
+	for _, key := range keys {
+		if value, ok := message[key]; ok {
+			summary[key] = value
+		}
+	}
+	return summary
 }
 
 type MailSendCmd struct {

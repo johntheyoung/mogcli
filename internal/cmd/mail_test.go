@@ -237,6 +237,39 @@ func TestMailMutationDryRunsNeedNoProfileAndRenderStableJSON(t *testing.T) {
 	}
 }
 
+func TestMailMutationSummaryOmitsSensitiveAndUnboundedFields(t *testing.T) {
+	input := map[string]any{
+		"id":                "message-id",
+		"parentFolderId":    "archive-id",
+		"subject":           "Subject",
+		"isRead":            true,
+		"receivedDateTime":  "2026-07-29T00:00:00Z",
+		"hasAttachments":    true,
+		"body":              map[string]any{"content": "secret body"},
+		"bodyPreview":       "secret preview",
+		"toRecipients":      []any{map[string]any{"emailAddress": map[string]any{"address": "person@example.com"}}},
+		"internetMessageId": "<opaque@example.com>",
+	}
+
+	got := mailMutationSummary(input)
+	want := map[string]any{
+		"id":               "message-id",
+		"parentFolderId":   "archive-id",
+		"subject":          "Subject",
+		"isRead":           true,
+		"receivedDateTime": "2026-07-29T00:00:00Z",
+		"hasAttachments":   true,
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected bounded mutation summary:\n got: %#v\nwant: %#v", got, want)
+	}
+	for _, forbidden := range []string{"body", "bodyPreview", "toRecipients", "internetMessageId"} {
+		if _, ok := got[forbidden]; ok {
+			t.Fatalf("mutation summary leaked %q", forbidden)
+		}
+	}
+}
+
 func TestMailMutationDryRunsRenderStablePlainOutput(t *testing.T) {
 	t.Setenv("MOG_PROFILE", "profile-that-must-not-be-resolved-for-dry-run")
 	t.Setenv("MOG_ENABLE_COMMANDS", "")
