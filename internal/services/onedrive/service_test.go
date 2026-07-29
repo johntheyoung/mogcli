@@ -2,10 +2,13 @@ package onedrive
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
 
 	"github.com/jaredpalmer/mogcli/internal/graph"
@@ -118,5 +121,135 @@ func TestEndpointsRouteByAuthMode(t *testing.T) {
 				t.Fatalf("Remove failed: %v", err)
 			}
 		})
+	}
+}
+
+func TestFileSharingPrimitivesUseSafePayloadsAndItemIDs(t *testing.T) {
+	t.Parallel()
+
+	var invitePayload map[string]any
+	var gotScopes [][]string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/me/drive/special/approot":
+			_, _ = fmt.Fprint(w, `{"id":"app-root-id","name":"Mog"}`)
+		case r.Method == http.MethodPut && r.URL.Path == "/me/drive/items/app-root-id:/mog-chat-file-fixed:/content":
+			if got := r.URL.Query().Get("@microsoft.graph.conflictBehavior"); got != "fail" {
+				t.Fatalf("expected conflict behavior fail, got %q", got)
+			}
+			content, err := io.ReadAll(r.Body)
+			if err != nil {
+				t.Fatalf("read upload failed: %v", err)
+			}
+			if string(content) != "hello" {
+				t.Fatalf("unexpected upload content %q", content)
+			}
+			w.WriteHeader(http.StatusCreated)
+			_, _ = fmt.Fprint(w, `{"id":"item-id","name":"mog-chat-file-fixed","size":5,"webUrl":"https://contoso.example/item"}`)
+		case r.Method == http.MethodGet && r.URL.Path == "/me/drive/items/item-id/content":
+			_, _ = fmt.Fprint(w, "hello")
+		case r.Method == http.MethodPost && r.URL.Path == "/me/drive/items/item-id/invite":
+			if err := json.NewDecoder(r.Body).Decode(&invitePayload); err != nil {
+				t.Fatalf("decode invite failed: %v", err)
+			}
+			_, _ = fmt.Fprint(w, `{"value":[{"id":"permission-id","roles":["read"],"grantedToV2":{"user":{"id":"recipient-id"}}}]}`)
+		case r.Method == http.MethodGet && r.URL.Path == "/me/drive/items/item-id/permissions":
+			_, _ = fmt.Fprint(w, `{"value":[{"id":"permission-id","roles":["read"],"grantedToV2":{"user":{"id":"recipient-id"}}}]}`)
+		case r.Method == http.MethodDelete && r.URL.Path == "/me/drive/items/item-id/permissions/permission-id":
+			w.WriteHeader(http.StatusNoContent)
+		case r.Method == http.MethodDelete && r.URL.Path == "/me/drive/items/item-id":
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			t.Fatalf("unexpected %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	client := graph.NewClient(func(_ context.Context, scopes []string) (string, error) {
+		gotScopes = append(gotScopes, append([]string(nil), scopes...))
+		return "token", nil
+	})
+	client.BaseURL = server.URL
+	client.HTTPClient = server.Client()
+	svc := New(client, "")
+
+	root, err := svc.AppRoot(context.Background())
+	if err != nil {
+		t.Fatalf("AppRoot failed: %v", err)
+	}
+	item, err := svc.UploadSimpleFail(context.Background(), root.ID, "mog-chat-file-fixed", []byte("hello"))
+	if err != nil {
+		t.Fatalf("UploadSimpleFail failed: %v", err)
+	}
+	if item.ID != "item-id" {
+		t.Fatalf("unexpected item: %#v", item)
+	}
+	content, err := svc.ContentByID(context.Background(), item.ID)
+	if err != nil || string(content) != "hello" {
+		t.Fatalf("ContentByID failed: content=%q err=%v", content, err)
+	}
+	invited, err := svc.InviteRead(context.Background(), item.ID, "recipient-id")
+	if err != nil || len(invited) != 1 || invited[0].ID != "permission-id" {
+		t.Fatalf("InviteRead failed: invited=%#v err=%v", invited, err)
+	}
+	recipients, ok := invitePayload["recipients"].([]any)
+	if !ok || len(recipients) != 1 {
+		t.Fatalf("unexpected recipients payload: %#v", invitePayload["recipients"])
+	}
+	recipient, ok := recipients[0].(map[string]any)
+	if !ok || recipient["objectId"] != "recipient-id" {
+		t.Fatalf("invite must use immutable objectId: %#v", recipients[0])
+	}
+	if invitePayload["requireSignIn"] != true ||
+		invitePayload["sendInvitation"] != false ||
+		invitePayload["retainInheritedPermissions"] != false {
+		t.Fatalf("unexpected invite safety flags: %#v", invitePayload)
+	}
+	roles, ok := invitePayload["roles"].([]any)
+	if !ok || len(roles) != 1 || roles[0] != "read" {
+		t.Fatalf("unexpected roles: %#v", invitePayload["roles"])
+	}
+	permissions, next, err := svc.Permissions(context.Background(), item.ID)
+	if err != nil || next != "" || len(permissions) != 1 {
+		t.Fatalf("Permissions failed: permissions=%#v next=%q err=%v", permissions, next, err)
+	}
+	if err := svc.RemovePermission(context.Background(), item.ID, "permission-id"); err != nil {
+		t.Fatalf("RemovePermission failed: %v", err)
+	}
+	if err := svc.RemoveByID(context.Background(), item.ID); err != nil {
+		t.Fatalf("RemoveByID failed: %v", err)
+	}
+	for _, scopes := range gotScopes {
+		if len(scopes) != 1 || scopes[0] != "Files.ReadWrite" {
+			t.Fatalf("file sharing primitive requested unexpected scopes: %#v", gotScopes)
+		}
+	}
+}
+
+func TestInviteReadDoesNotRetryServerErrors(t *testing.T) {
+	t.Parallel()
+
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || !strings.HasSuffix(r.URL.Path, "/invite") {
+			t.Fatalf("unexpected %s %s", r.Method, r.URL.Path)
+		}
+		requests++
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = fmt.Fprint(w, `{"error":{"code":"busy","message":"try later"}}`)
+	}))
+	defer server.Close()
+
+	client := graph.NewClient(func(context.Context, []string) (string, error) { return "token", nil })
+	client.BaseURL = server.URL
+	client.HTTPClient = server.Client()
+	client.MaxRetries5xx = 3
+
+	_, err := New(client, "").InviteRead(context.Background(), "item-id", "recipient-id")
+	if err == nil {
+		t.Fatal("expected invite error")
+	}
+	if requests != 1 {
+		t.Fatalf("invite must not retry; got %d requests", requests)
 	}
 }

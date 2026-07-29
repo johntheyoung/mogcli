@@ -160,11 +160,11 @@ The update flow shows current settings, lets you choose one field at a time to e
 - `mog auth`
 - `mog auth app`
 - `mog auth login|update|logout|accounts|use|whoami`
-- `mog mail list|get|send`
+- `mog mail folders|list|get|send`
 - `mog calendar list|get|create|update|delete`
 - `mog contacts list|get|create|update|delete`
 - `mog groups list|get|members`
-- `mog teams list|channels|channel-send|chats|chat-send|dm-send`
+- `mog teams list|channels|channel-send|chats|chat-members|chat-send|chat-file-send|dm-send`
 - `mog tasks lists|list|get|create|update|complete|delete`
 - `mog onedrive ls|get|put|mkdir|rm`
 - `mog config get|keys|set|unset|list|path`
@@ -175,12 +175,35 @@ The update flow shows current settings, lets you choose one field at a time to e
 Mail:
 
 ```bash
+mog mail folders --max 50
+mog mail folders --include-hidden --json
 mog mail list --max 50 --query "from:alerts@example.com"
+mog mail list --folder inbox --max 50
+mog mail list --folder <folder-id> --max 50
 mog mail get <message-id>
 mog mail send --to dev@contoso.com --subject "Deploy complete" --body "Finished."
 mog mail send --to dev@contoso.com --subject "Re: Deploy complete" --quote <message-id>
 mog mail send --to dev@contoso.com --subject "Deploy complete" --body "Finished." --dry-run
 ```
+
+`mog mail folders` lists top-level folders and their IDs, parent IDs, child counts, total item counts, and unread counts. Hidden folders are excluded by default; pass `--include-hidden` to request them explicitly.
+
+Without `--folder`, `mog mail list` preserves the mailbox-wide `/messages` behavior. Pass a Graph folder ID or well-known folder name such as `inbox` to use the folder-scoped messages endpoint. Message list responses include routing, conversation, recipient, timestamp, status, importance, flag, category, classification, attachment-presence, and web-link metadata, but never request message bodies or attachments. Mail folder/list/get reads request Outlook immutable IDs with `Prefer: IdType="ImmutableId"`.
+
+When the action guard is configured, folder discovery must be enabled explicitly as `mail.folders`; enabling `mail.list` does not authorize it.
+
+### Managed automation guard
+
+Interactive CLI use remains unrestricted when no allowlists are configured. For a managed or headless process, opt in explicitly with `MOG_MANAGED_AUTOMATION=true` (or `--managed-automation`) and configure both allowlists:
+
+```bash
+MOG_MANAGED_AUTOMATION=true \
+MOG_ENABLE_COMMANDS=mail \
+MOG_ENABLE_ACTIONS=mail.folders,mail.list,mail.get \
+mog mail folders --json
+```
+
+Managed automation fails closed if either `MOG_ENABLE_COMMANDS` or `MOG_ENABLE_ACTIONS` is missing, empty, whitespace-only, or contains only empty comma-separated entries. This mode is never inferred from a TTY, `CI`, or another ambient environment variable. Use `all` or `*` explicitly if a managed process intentionally needs an unrestricted allowlist.
 
 Calendar:
 
@@ -225,9 +248,32 @@ mog teams list --max 100
 mog teams channels --team <team-id> --max 100
 mog teams channel-send --team <team-id> --channel <channel-id> --body "Deploy complete" --dry-run
 mog teams chats --max 50
+mog teams chat-members --chat <chat-id> --max 50
 mog teams chat-send --chat <chat-id> --body "Deploy complete" --dry-run
+mog teams chat-send --chat <chat-id> --body "Standup is ready" --mention "Jane Doe:<aad-object-id>" --dry-run
+mog teams chat-file-send --chat <chat-id> --file ./report.pdf --dry-run --json
+mog teams chat-file-send --chat <chat-id> --file ./report.pdf --name "Quarterly report.pdf" --body "Please review" --json
 mog teams dm-send --to user@contoso.com --body "Deploy complete" --dry-run
 ```
+
+For chat mentions, repeat `--mention "Display Name:<aad-object-id>"` for each Teams @mention. `chat-send` builds the Microsoft Graph HTML `<at>` tags and top-level `mentions` array; plain text bodies are escaped before mention tags are appended.
+
+`teams chat-file-send` is an enterprise-delegated, one-on-one-only file send. The caller supplies an existing chat ID. Before uploading, mog resolves `/me`, confirms the chat resource has `chatType: oneOnOne`, and requires exactly the signed-in internal member plus one other same-tenant AAD member with an immutable `userId`. Guest, external, paged, incomplete, or ambiguous membership responses fail closed. The command never selects a recipient from an ambiguous member list.
+
+The profile must be authorized for both the `teams` and `onedrive` delegated workloads. The operation uses the existing delegated permissions `User.Read`, `Chat.ReadBasic` (to read and verify `chatType`), `ChatMember.Read`, `Files.ReadWrite`, and `ChatMessage.Send`. It does not use `User.ReadBasic.All`, tenant-wide file/site write permissions, application permissions, anonymous links, or organization-wide links. In managed automation, enable the separate action `teams.chat-file-send`; `teams.chat-send`, `teams.dm-send`, and `onedrive.put` do not authorize it:
+
+```bash
+MOG_MANAGED_AUTOMATION=true \
+MOG_ENABLE_COMMANDS=teams \
+MOG_ENABLE_ACTIONS=teams.chat-file-send \
+mog teams chat-file-send --chat <chat-id> --file ./report.pdf --dry-run --json
+```
+
+The default attachment name is the local basename; `--name` overrides it after strict filename validation, including rejection of Unicode formatting controls that can visually spoof names. The optional `--body` is treated as short text (maximum 4096 bytes), HTML-escaped, and sent as HTML only so Teams can receive the required `<attachment>` marker. Local files are checked with `lstat`: symlinks and non-regular files are rejected, the maximum is 50 MiB, and mog hashes the exact bytes with SHA-256 without emitting file content or the full local parent path.
+
+Dry run is entirely local: it validates and hashes the file but acquires no token, makes no Graph call, and does not validate the remote chat or recipient. Its JSON reports the planned stages, `conflict_policy: "fail"`, direct sign-in-required read permission policy with `retain_inherited_permissions: false`, and rollback policy.
+
+On a live run, mog uploads a uniquely and neutrally named item under its private OneDrive app folder using simple upload with conflict behavior `fail`, reads the item back by ID to verify byte count and SHA-256, and grants only the verified other member direct read access (`requireSignIn: true`, `sendInvitation: false`, `retainInheritedPermissions: false`). Before sending, mog lists the resulting permissions and fails closed unless it can prove the item has exactly the recipient's new direct read grant plus at most the signed-in user's explicit owner grant—no inherited grants, other users/groups, or sharing links of any scope. Graph can create the app folder on first access; mog treats that folder as shared managed infrastructure and never removes it during per-send rollback. Failures before a confirmed message HTTP 201 remove only the permission and drive item created by that operation. An indeterminate final-send transport failure or server-side 5xx response is never retried and preserves the backing item and permission to avoid breaking a message that may have been delivered. Successfully sent backing files also remain in OneDrive and count against the user's quota.
 
 Tasks:
 
@@ -254,7 +300,9 @@ If `mog onedrive get` is run without `--out`, files are saved under the local `o
 App-only target user override (mail/contacts/onedrive):
 
 ```bash
+mog mail folders --user user@contoso.com --max 20
 mog mail list --user user@contoso.com --max 20
+mog mail list --user user@contoso.com --folder inbox --max 20
 mog onedrive ls --user user@contoso.com --path /
 ```
 
@@ -268,6 +316,10 @@ mog groups list --page "<next-token-url>"
 ```
 
 `--next-token` is also accepted as an alias for pagination resume flags where supported.
+
+Mail list and folder commands return one Microsoft Graph page per invocation. `--max` sets `$top` only for the initial request; Graph can return fewer items and still provide a `next` URL. Pass that opaque URL back with `--page` to continue. A resumed request uses the endpoint, filters, hidden-folder mode, and page sizing encoded by Graph in that URL instead of reapplying initial request selectors. The presence of fewer than `--max` results never implies complete coverage.
+
+Their JSON responses retain the existing `messages` or `folders` collection and opaque `next` URL, and also report page coverage explicitly: `hasMore` is true and `complete` is false when Graph supplied `@odata.nextLink`; otherwise `hasMore` is false and `complete` is true. These fields describe coverage of the requested list across Graph pages, not recursive child-folder traversal.
 
 Output modes:
 

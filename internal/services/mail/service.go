@@ -2,6 +2,7 @@ package mail
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -12,7 +13,12 @@ import (
 
 var listMailScopes = []string{"Mail.Read"}
 var getMailScopes = []string{"Mail.Read"}
+var listMailFolderScopes = []string{"Mail.Read"}
 var sendMailScopes = []string{"Mail.Send"}
+
+const messageListSelect = "id,parentFolderId,conversationId,subject,from,sender,toRecipients,ccRecipients,receivedDateTime,sentDateTime,isRead,isDraft,hasAttachments,importance,flag,categories,inferenceClassification,webLink"
+const mailFolderListSelect = "id,displayName,parentFolderId,childFolderCount,totalItemCount,unreadItemCount"
+const immutableIDPreference = "IdType=\"ImmutableId\""
 
 type Service struct {
 	client      *graph.Client
@@ -23,20 +29,20 @@ func New(client *graph.Client, appOnlyUser string) *Service {
 	return &Service{client: client, appOnlyUser: strings.TrimSpace(appOnlyUser)}
 }
 
-func (s *Service) List(ctx context.Context, max int, queryText string, page string) ([]map[string]any, string, error) {
+func (s *Service) List(ctx context.Context, max int, queryText string, page string, folder string) ([]map[string]any, string, error) {
 	query := url.Values{}
 	if max > 0 {
 		query.Set("$top", fmt.Sprintf("%d", max))
 	}
-	query.Set("$select", "id,subject,receivedDateTime,isRead,from")
+	query.Set("$select", messageListSelect)
 
-	headers := http.Header{}
+	headers := mailReadHeaders()
 	if strings.TrimSpace(queryText) != "" {
 		query.Set("$search", fmt.Sprintf("\"%s\"", strings.TrimSpace(queryText)))
 		headers.Set("ConsistencyLevel", "eventual")
 	}
 
-	endpoint := s.messagesEndpoint()
+	endpoint := s.messagesEndpoint(folder)
 	if strings.TrimSpace(page) != "" {
 		endpoint = strings.TrimSpace(page)
 		query = nil
@@ -55,14 +61,56 @@ func (s *Service) List(ctx context.Context, max int, queryText string, page stri
 		return nil, "", err
 	}
 
-	trimmed, trimmedNext := trimPage(items, next, max)
-	return trimmed, trimmedNext, nil
+	return items, next, nil
+}
+
+func (s *Service) ListFolders(ctx context.Context, max int, page string, includeHidden bool) ([]map[string]any, string, error) {
+	query := url.Values{}
+	if max > 0 {
+		query.Set("$top", fmt.Sprintf("%d", max))
+	}
+	query.Set("$select", mailFolderListSelect)
+	if includeHidden {
+		query.Set("includeHiddenFolders", "true")
+	}
+
+	endpoint := s.mailFoldersEndpoint()
+	if strings.TrimSpace(page) != "" {
+		endpoint = strings.TrimSpace(page)
+		query = nil
+	}
+
+	_, body, err := s.client.Do(ctx, http.MethodGet, endpoint, query, nil, listMailFolderScopes, mailReadHeaders())
+	if err != nil {
+		return nil, "", err
+	}
+
+	items, next, err := graph.DecodeODataPage(body)
+	if err != nil {
+		return nil, "", err
+	}
+
+	return items, next, nil
 }
 
 func (s *Service) Get(ctx context.Context, id string) (map[string]any, error) {
 	var payload map[string]any
-	err := s.client.DoJSON(ctx, http.MethodGet, s.messagesEndpoint()+"/"+url.PathEscape(strings.TrimSpace(id)), nil, nil, getMailScopes, &payload)
-	return payload, err
+	_, body, err := s.client.Do(
+		ctx,
+		http.MethodGet,
+		s.messagesEndpoint("")+"/"+url.PathEscape(strings.TrimSpace(id)),
+		nil,
+		nil,
+		getMailScopes,
+		mailReadHeaders(),
+	)
+	if err != nil {
+		return nil, err
+	}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return nil, fmt.Errorf("decode response json: %w", err)
+	}
+	return payload, nil
 }
 
 func (s *Service) Send(ctx context.Context, to []string, subject string, body string) error {
@@ -93,11 +141,23 @@ func (s *Service) Send(ctx context.Context, to []string, subject string, body st
 	return err
 }
 
-func (s *Service) messagesEndpoint() string {
-	if s.appOnlyUser != "" {
-		return "/users/" + url.PathEscape(s.appOnlyUser) + "/messages"
+func (s *Service) messagesEndpoint(folder string) string {
+	root := s.mailboxEndpoint()
+	if folder := strings.TrimSpace(folder); folder != "" {
+		return root + "/mailFolders/" + url.PathEscape(folder) + "/messages"
 	}
-	return "/me/messages"
+	return root + "/messages"
+}
+
+func (s *Service) mailFoldersEndpoint() string {
+	return s.mailboxEndpoint() + "/mailFolders"
+}
+
+func (s *Service) mailboxEndpoint() string {
+	if s.appOnlyUser != "" {
+		return "/users/" + url.PathEscape(s.appOnlyUser)
+	}
+	return "/me"
 }
 
 func (s *Service) sendMailEndpoint() string {
@@ -107,17 +167,16 @@ func (s *Service) sendMailEndpoint() string {
 	return "/me/sendMail"
 }
 
-func trimPage(items []map[string]any, next string, max int) ([]map[string]any, string) {
-	if max <= 0 || len(items) <= max {
-		return items, next
-	}
-	return items[:max], next
-}
-
 func hasSearchQuery(page string) bool {
 	u, err := url.Parse(strings.TrimSpace(page))
 	if err != nil {
 		return false
 	}
 	return strings.TrimSpace(u.Query().Get("$search")) != ""
+}
+
+func mailReadHeaders() http.Header {
+	headers := http.Header{}
+	headers.Set("Prefer", immutableIDPreference)
+	return headers
 }

@@ -1,18 +1,41 @@
 package cmd
 
 import (
+	"os"
+	"strconv"
 	"strings"
 
 	"github.com/alecthomas/kong"
 )
 
-func enforceEnabledCommands(kctx *kong.Context, enabled string) error {
+const managedAutomationEnv = "MOG_MANAGED_AUTOMATION"
+
+func managedAutomationMode(flagEnabled bool) (bool, error) {
+	raw, ok := os.LookupEnv(managedAutomationEnv)
+	if !ok || strings.TrimSpace(raw) == "" {
+		return flagEnabled, nil
+	}
+
+	envEnabled, err := strconv.ParseBool(strings.TrimSpace(raw))
+	if err != nil {
+		return false, usagef("%s must be a boolean (for example true or false)", managedAutomationEnv)
+	}
+	return flagEnabled || envEnabled, nil
+}
+
+func enforceEnabledCommands(kctx *kong.Context, enabled string, managedMode bool) error {
 	enabled = strings.TrimSpace(enabled)
 	if enabled == "" {
+		if managedMode {
+			return usage("managed automation requires a non-empty command allowlist (set MOG_ENABLE_COMMANDS or --enable-commands)")
+		}
 		return nil
 	}
 	allow := parseEnabledCommands(enabled)
 	if len(allow) == 0 {
+		if managedMode {
+			return usage("managed automation requires a non-empty command allowlist (set MOG_ENABLE_COMMANDS or --enable-commands)")
+		}
 		return nil
 	}
 	if allow["*"] || allow["all"] {
@@ -29,13 +52,19 @@ func enforceEnabledCommands(kctx *kong.Context, enabled string) error {
 	return nil
 }
 
-func enforceEnabledActions(kctx *kong.Context, enabled string) error {
+func enforceEnabledActions(kctx *kong.Context, enabled string, managedMode bool) error {
 	enabled = strings.TrimSpace(enabled)
 	if enabled == "" {
+		if managedMode {
+			return usage("managed automation requires a non-empty action allowlist (set MOG_ENABLE_ACTIONS or --enable-actions)")
+		}
 		return nil
 	}
 	allow := parseEnabledCommands(enabled)
 	if len(allow) == 0 {
+		if managedMode {
+			return usage("managed automation requires a non-empty action allowlist (set MOG_ENABLE_ACTIONS or --enable-actions)")
+		}
 		return nil
 	}
 	if allow["*"] || allow["all"] {
@@ -71,5 +100,15 @@ func commandAction(kctx *kong.Context) string {
 	if len(parts) == 0 {
 		return ""
 	}
-	return strings.Join(parts, ".")
+	actionParts := make([]string, 0, len(parts))
+	for _, part := range parts {
+		// Kong represents positional resource values as schema placeholders
+		// such as <id>. They identify the target of an action, not a distinct
+		// capability, so keep only named commands in the canonical action.
+		if strings.HasPrefix(part, "<") && strings.HasSuffix(part, ">") {
+			continue
+		}
+		actionParts = append(actionParts, part)
+	}
+	return strings.Join(actionParts, ".")
 }

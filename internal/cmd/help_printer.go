@@ -193,7 +193,13 @@ func helpExamplesFor(selectedPath string) []string {
 	case "mail list":
 		return []string{
 			"$ mog mail list --max 20",
+			"$ mog mail list --folder inbox --max 20",
 			"$ mog mail list --query \"from:alerts@example.com\"",
+		}
+	case "mail folders":
+		return []string{
+			"$ mog mail folders --max 50",
+			"$ mog mail folders --include-hidden --json",
 		}
 	case "mail send":
 		return []string{
@@ -206,6 +212,11 @@ func helpExamplesFor(selectedPath string) []string {
 	case "onedrive ls":
 		return []string{
 			"$ mog onedrive ls --path /Documents --max 50",
+		}
+	case "teams chat-file-send":
+		return []string{
+			"$ mog teams chat-file-send --chat <chat-id> --file ./report.pdf --dry-run --json",
+			"$ mog teams chat-file-send --chat <chat-id> --file ./report.pdf --name \"Quarterly report.pdf\" --body \"Please review\" --json",
 		}
 	}
 

@@ -8,15 +8,18 @@ import (
 
 	"github.com/jaredpalmer/mogcli/internal/outfmt"
 	teamsvc "github.com/jaredpalmer/mogcli/internal/services/teams"
+	"github.com/jaredpalmer/mogcli/internal/services/teamsfile"
 )
 
 type TeamsCmd struct {
-	List        TeamsListCmd        `cmd:"" help:"List joined teams"`
-	Channels    TeamsChannelsCmd    `cmd:"" help:"List channels in a team"`
-	ChannelSend TeamsChannelSendCmd `cmd:"" name:"channel-send" help:"Send a message to a team channel"`
-	Chats       TeamsChatsCmd       `cmd:"" help:"List Teams chats"`
-	ChatSend    TeamsChatSendCmd    `cmd:"" name:"chat-send" help:"Send a message to a Teams chat"`
-	DMSend      TeamsDMSendCmd      `cmd:"" name:"dm-send" help:"Send a direct Teams message"`
+	List         TeamsListCmd         `cmd:"" help:"List joined teams"`
+	Channels     TeamsChannelsCmd     `cmd:"" help:"List channels in a team"`
+	ChannelSend  TeamsChannelSendCmd  `cmd:"" name:"channel-send" help:"Send a message to a team channel"`
+	Chats        TeamsChatsCmd        `cmd:"" help:"List Teams chats"`
+	ChatMembers  TeamsChatMembersCmd  `cmd:"" name:"chat-members" help:"List members in a Teams chat"`
+	ChatSend     TeamsChatSendCmd     `cmd:"" name:"chat-send" help:"Send a message to a Teams chat"`
+	ChatFileSend TeamsChatFileSendCmd `cmd:"" name:"chat-file-send" help:"Safely upload and send a file to a verified one-on-one Teams chat"`
+	DMSend       TeamsDMSendCmd       `cmd:"" name:"dm-send" help:"Send a direct Teams message"`
 }
 
 type TeamsListCmd struct {
@@ -104,6 +107,35 @@ func (c *TeamsChatsCmd) Run(ctx context.Context) error {
 	return nil
 }
 
+type TeamsChatMembersCmd struct {
+	Chat string `name:"chat" required:"" help:"Chat ID"`
+	Max  int    `name:"max" default:"50" help:"Maximum chat members"`
+	Page string `name:"page" aliases:"next-token" help:"Resume from next page token"`
+}
+
+func (c *TeamsChatMembersCmd) Run(ctx context.Context) error {
+	rt, err := resolveRuntime(ctx, capTeamsChatMembers)
+	if err != nil {
+		return err
+	}
+	page, err := normalizePageToken(c.Page)
+	if err != nil {
+		return err
+	}
+
+	items, next, err := teamsvc.New(rt.Graph).ChatMembers(ctx, c.Chat, c.Max, page)
+	if err != nil {
+		return err
+	}
+
+	if outfmt.IsJSON(ctx) {
+		return outfmt.WriteJSON(os.Stdout, map[string]any{"members": items, "next": next})
+	}
+	printItemTable(ctx, items, []string{"displayName", "email", "userId", "id", "roles"})
+	printNextPageHint(uiFromContext(ctx), next)
+	return nil
+}
+
 type TeamsChannelSendCmd struct {
 	Team        string `name:"team" required:"" help:"Team ID"`
 	Channel     string `name:"channel" required:"" help:"Channel ID"`
@@ -151,16 +183,21 @@ func (c *TeamsChannelSendCmd) Run(ctx context.Context) error {
 }
 
 type TeamsChatSendCmd struct {
-	Chat        string `name:"chat" required:"" help:"Chat ID"`
-	Body        string `name:"body" required:"" help:"Message body"`
-	ContentType string `name:"content-type" enum:"text,html" default:"text" help:"Message body content type"`
-	DryRun      bool   `name:"dry-run" help:"Preview send without posting the message"`
+	Chat        string   `name:"chat" required:"" help:"Chat ID"`
+	Body        string   `name:"body" required:"" help:"Message body"`
+	ContentType string   `name:"content-type" enum:"text,html" default:"text" help:"Message body content type"`
+	Mention     []string `name:"mention" help:"Teams @mention as Display Name:<aad-object-id> (repeat for multiple)"`
+	DryRun      bool     `name:"dry-run" help:"Preview send without posting the message"`
 }
 
 func (c *TeamsChatSendCmd) Run(ctx context.Context) error {
 	body := strings.TrimSpace(c.Body)
 	if body == "" {
 		return usage("--body is required")
+	}
+	mentions, err := teamsvc.ParseChatMentions(c.Mention)
+	if err != nil {
+		return usage(err.Error())
 	}
 
 	rt, err := resolveRuntime(ctx, capTeamsChatSend)
@@ -170,19 +207,17 @@ func (c *TeamsChatSendCmd) Run(ctx context.Context) error {
 
 	if c.DryRun {
 		if outfmt.IsJSON(ctx) {
-			return outfmt.WriteJSON(os.Stdout, map[string]any{
-				"dry_run":     true,
-				"action":      "teams.chat-send",
-				"chat":        c.Chat,
-				"contentType": c.ContentType,
-				"body_len":    len(body),
-			})
+			return outfmt.WriteJSON(os.Stdout, teamsChatSendDryRunPayload(c.Chat, body, c.ContentType, mentions))
+		}
+		if len(mentions) > 0 {
+			fmt.Fprintf(os.Stdout, "Dry run: would send Teams chat message to chat %s with %d mention(s): %s\n", c.Chat, len(mentions), strings.Join(teamsvc.ChatMentionDisplayNames(mentions), ", "))
+			return nil
 		}
 		fmt.Fprintf(os.Stdout, "Dry run: would send Teams chat message to chat %s\n", c.Chat)
 		return nil
 	}
 
-	item, err := teamsvc.New(rt.Graph).SendChatMessage(ctx, c.Chat, body, c.ContentType)
+	item, err := teamsvc.New(rt.Graph).SendChatMessageWithMentions(ctx, c.Chat, body, c.ContentType, mentions)
 	if err != nil {
 		return err
 	}
@@ -191,6 +226,83 @@ func (c *TeamsChatSendCmd) Run(ctx context.Context) error {
 		return outfmt.WriteJSON(os.Stdout, item)
 	}
 	fmt.Fprintf(os.Stdout, "Sent Teams chat message %s\n", flattenValue(item["id"]))
+	return nil
+}
+
+func teamsChatSendDryRunPayload(chat string, body string, contentType string, mentions []teamsvc.ChatMention) map[string]any {
+	payload := map[string]any{
+		"dry_run":     true,
+		"action":      "teams.chat-send",
+		"chat":        chat,
+		"contentType": contentType,
+		"body_len":    len(body),
+	}
+	if len(mentions) == 0 {
+		return payload
+	}
+
+	payload["contentType"] = "html"
+	payload["mention_count"] = len(mentions)
+	payload["mention_display_names"] = teamsvc.ChatMentionDisplayNames(mentions)
+	return payload
+}
+
+type TeamsChatFileSendCmd struct {
+	Chat   string `name:"chat" required:"" help:"Existing one-on-one Teams chat ID"`
+	File   string `name:"file" required:"" help:"Readable local regular file (symlinks are rejected)"`
+	Name   string `name:"name" help:"Safe displayed attachment filename (defaults to the local basename)"`
+	Body   string `name:"body" help:"Optional short text shown above the attachment (escaped before HTML send)"`
+	DryRun bool   `name:"dry-run" help:"Validate and hash locally without authentication or Graph calls"`
+}
+
+func (c *TeamsChatFileSendCmd) Run(ctx context.Context) error {
+	prepared, err := teamsfile.Prepare(teamsfile.Request{
+		ChatID:      c.Chat,
+		LocalPath:   c.File,
+		DisplayName: c.Name,
+		Body:        c.Body,
+	})
+	if err != nil {
+		return usage(err.Error())
+	}
+
+	if c.DryRun {
+		plan := prepared.DryRun()
+		if outfmt.IsJSON(ctx) {
+			return outfmt.WriteJSON(os.Stdout, plan)
+		}
+		fmt.Fprintf(
+			os.Stdout,
+			"Dry run: validated %s (%d bytes, sha256 %s) for Teams chat %s; no authentication or Graph calls were made\n",
+			plan.Filename,
+			plan.Bytes,
+			plan.SHA256,
+			plan.ChatID,
+		)
+		return nil
+	}
+
+	rt, err := resolveRuntime(ctx, capTeamsChatFileSend)
+	if err != nil {
+		return err
+	}
+	result, err := teamsfile.New(rt.Graph).Send(ctx, prepared)
+	if err != nil {
+		return err
+	}
+
+	if outfmt.IsJSON(ctx) {
+		return outfmt.WriteJSON(os.Stdout, result)
+	}
+	fmt.Fprintf(
+		os.Stdout,
+		"Sent file %s (%d bytes, sha256 %s) as Teams message %s in chat %s\n",
+		result.Filename,
+		result.Bytes,
+		result.SHA256,
+		result.MessageID,
+		result.ChatID,
+	)
 	return nil
 }
 
