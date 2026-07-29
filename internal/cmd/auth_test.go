@@ -213,6 +213,7 @@ func TestAuthLoginDelegatedPersistsWorkloads(t *testing.T) {
 		"User.Read",
 		"Mail.Read",
 		"Mail.Send",
+		"Mail.ReadWrite",
 		"Contacts.Read",
 		"Contacts.ReadWrite",
 	}

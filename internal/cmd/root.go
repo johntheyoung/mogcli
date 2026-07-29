@@ -34,7 +34,7 @@ type CLI struct {
 	Version kong.VersionFlag `group:"inherited-flags" help:"Print version and exit"`
 
 	Auth       AuthCmd               `cmd:"" help:"Authenticate and manage profiles"`
-	Mail       MailCmd               `cmd:"" aliases:"email" help:"Read and send Outlook mail"`
+	Mail       MailCmd               `cmd:"" aliases:"email" help:"Manage Outlook mail"`
 	Calendar   CalendarCmd           `cmd:"" help:"Manage Outlook calendar events"`
 	Contacts   ContactsCmd           `cmd:"" help:"Manage Outlook contacts"`
 	Groups     GroupsCmd             `cmd:"" help:"Manage Microsoft 365 Groups (enterprise only)"`

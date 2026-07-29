@@ -14,6 +14,21 @@ func TestDryRunFlagsParse(t *testing.T) {
 			get:  func(cli *CLI) bool { return cli.Mail.Send.DryRun },
 		},
 		{
+			name: "mail archive --dry-run",
+			args: []string{"mail", "archive", "message-id", "--dry-run"},
+			get:  func(cli *CLI) bool { return cli.Mail.Archive.DryRun },
+		},
+		{
+			name: "mail move --dry-run",
+			args: []string{"mail", "move", "message-id", "--folder", "archive", "--dry-run"},
+			get:  func(cli *CLI) bool { return cli.Mail.Move.DryRun },
+		},
+		{
+			name: "mail mark-read --dry-run",
+			args: []string{"mail", "mark-read", "message-id", "--dry-run"},
+			get:  func(cli *CLI) bool { return cli.Mail.MarkRead.DryRun },
+		},
+		{
 			name: "calendar create --dry-run",
 			args: []string{
 				"calendar", "create",

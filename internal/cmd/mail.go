@@ -11,10 +11,13 @@ import (
 )
 
 type MailCmd struct {
-	List    MailListCmd    `cmd:"" help:"List one page of messages; JSON reports complete/hasMore coverage"`
-	Folders MailFoldersCmd `cmd:"" help:"List one page of top-level folders; JSON reports complete/hasMore coverage"`
-	Get     MailGetCmd     `cmd:"" help:"Get message by ID"`
-	Send    MailSendCmd    `cmd:"" help:"Send a new message"`
+	List     MailListCmd     `cmd:"" help:"List one page of messages; JSON reports complete/hasMore coverage"`
+	Folders  MailFoldersCmd  `cmd:"" help:"List one page of top-level folders; JSON reports complete/hasMore coverage"`
+	Get      MailGetCmd      `cmd:"" help:"Get message by ID"`
+	Send     MailSendCmd     `cmd:"" help:"Send a new message"`
+	Archive  MailArchiveCmd  `cmd:"" help:"Move one message to Outlook's Archive folder"`
+	Move     MailMoveCmd     `cmd:"" help:"Move one message to an explicit destination folder"`
+	MarkRead MailMarkReadCmd `cmd:"" name:"mark-read" help:"Mark one message as read"`
 }
 
 type MailListCmd struct {
@@ -139,6 +142,159 @@ func (c *MailGetCmd) Run(ctx context.Context) error {
 	}
 
 	printSingleMap(ctx, item)
+	return nil
+}
+
+type MailArchiveCmd struct {
+	ID     string `arg:"" required:"" help:"Message ID"`
+	User   string `name:"user" help:"App-only target user override (UPN or user ID)"`
+	DryRun bool   `name:"dry-run" help:"Preview archive without moving the message"`
+}
+
+func (c *MailArchiveCmd) Run(ctx context.Context) error {
+	id := strings.TrimSpace(c.ID)
+	if id == "" {
+		return usage("message id is required")
+	}
+
+	const destination = "archive"
+	if c.DryRun {
+		return renderMailMoveDryRun(ctx, "mail.archive", "archive", id, destination)
+	}
+
+	rt, err := resolveRuntime(ctx, capMailArchive)
+	if err != nil {
+		return err
+	}
+	targetUser, err := resolveAppOnlyTargetUser(rt.Profile, c.User)
+	if err != nil {
+		return err
+	}
+
+	moved, err := mail.New(rt.Graph, targetUser).Archive(ctx, id)
+	if err != nil {
+		return err
+	}
+	return renderMailMoveResult(ctx, "mail.archive", "Archived", id, destination, moved)
+}
+
+type MailMoveCmd struct {
+	ID     string `arg:"" required:"" help:"Message ID"`
+	Folder string `name:"folder" required:"" help:"Destination folder ID or supported well-known name"`
+	User   string `name:"user" help:"App-only target user override (UPN or user ID)"`
+	DryRun bool   `name:"dry-run" help:"Preview move without moving the message"`
+}
+
+func (c *MailMoveCmd) Run(ctx context.Context) error {
+	id := strings.TrimSpace(c.ID)
+	if id == "" {
+		return usage("message id is required")
+	}
+	destination := strings.TrimSpace(c.Folder)
+	if destination == "" {
+		return usage("destination folder is required")
+	}
+
+	if c.DryRun {
+		return renderMailMoveDryRun(ctx, "mail.move", "move", id, destination)
+	}
+
+	rt, err := resolveRuntime(ctx, capMailMove)
+	if err != nil {
+		return err
+	}
+	targetUser, err := resolveAppOnlyTargetUser(rt.Profile, c.User)
+	if err != nil {
+		return err
+	}
+
+	moved, err := mail.New(rt.Graph, targetUser).Move(ctx, id, destination)
+	if err != nil {
+		return err
+	}
+	return renderMailMoveResult(ctx, "mail.move", "Moved", id, destination, moved)
+}
+
+type MailMarkReadCmd struct {
+	ID     string `arg:"" required:"" help:"Message ID"`
+	User   string `name:"user" help:"App-only target user override (UPN or user ID)"`
+	DryRun bool   `name:"dry-run" help:"Preview read-state update without modifying the message"`
+}
+
+func (c *MailMarkReadCmd) Run(ctx context.Context) error {
+	id := strings.TrimSpace(c.ID)
+	if id == "" {
+		return usage("message id is required")
+	}
+
+	if c.DryRun {
+		if outfmt.IsJSON(ctx) {
+			return outfmt.WriteJSON(os.Stdout, map[string]any{
+				"action":  "mail.mark-read",
+				"dry_run": true,
+				"id":      id,
+				"is_read": true,
+			})
+		}
+		fmt.Fprintf(os.Stdout, "Dry run: would mark message %s as read (isRead=true)\n", id)
+		return nil
+	}
+
+	rt, err := resolveRuntime(ctx, capMailMarkRead)
+	if err != nil {
+		return err
+	}
+	targetUser, err := resolveAppOnlyTargetUser(rt.Profile, c.User)
+	if err != nil {
+		return err
+	}
+
+	updated, err := mail.New(rt.Graph, targetUser).MarkRead(ctx, id)
+	if err != nil {
+		return err
+	}
+	if outfmt.IsJSON(ctx) {
+		return outfmt.WriteJSON(os.Stdout, map[string]any{
+			"action":  "mail.mark-read",
+			"id":      id,
+			"is_read": true,
+			"message": updated,
+		})
+	}
+	fmt.Fprintf(os.Stdout, "Marked message %s as read\n", id)
+	return nil
+}
+
+func renderMailMoveDryRun(ctx context.Context, action string, verb string, id string, destination string) error {
+	if outfmt.IsJSON(ctx) {
+		return outfmt.WriteJSON(os.Stdout, map[string]any{
+			"action":      action,
+			"destination": destination,
+			"dry_run":     true,
+			"id":          id,
+		})
+	}
+	fmt.Fprintf(os.Stdout, "Dry run: would %s message %s to folder %s\n", verb, id, destination)
+	return nil
+}
+
+func renderMailMoveResult(ctx context.Context, action string, verb string, id string, destination string, moved map[string]any) error {
+	if outfmt.IsJSON(ctx) {
+		return outfmt.WriteJSON(os.Stdout, map[string]any{
+			"action":      action,
+			"destination": destination,
+			"id":          id,
+			"message":     moved,
+		})
+	}
+	fmt.Fprintf(
+		os.Stdout,
+		"%s message %s to folder %s (new id: %s)\n",
+		verb,
+		id,
+		destination,
+		flattenValue(moved["id"]),
+	)
 	return nil
 }
 
