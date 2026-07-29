@@ -80,6 +80,7 @@ type CalendarCreateCmd struct {
 	End       string   `name:"end" required:"" help:"End datetime (RFC3339)"`
 	Body      string   `name:"body" help:"Optional body text"`
 	Attendees []string `name:"attendee" help:"Attendee email (repeat for multiple)"`
+	ShowAs    string   `name:"show-as" help:"Availability: free, tentative, busy, oof, workingElsewhere, or unknown"`
 	Teams     bool     `name:"teams" help:"Add Teams meeting link"`
 	DryRun    bool     `name:"dry-run" help:"Preview create without creating the event"`
 }
@@ -100,6 +101,13 @@ func (c *CalendarCreateCmd) Run(ctx context.Context) error {
 		"subject": c.Subject,
 		"start":   map[string]any{"dateTime": c.Start, "timeZone": "UTC"},
 		"end":     map[string]any{"dateTime": c.End, "timeZone": "UTC"},
+	}
+	if strings.TrimSpace(c.ShowAs) != "" {
+		showAs, err := normalizeCalendarShowAs(c.ShowAs)
+		if err != nil {
+			return err
+		}
+		payload["showAs"] = showAs
 	}
 	if strings.TrimSpace(c.Body) != "" {
 		payload["body"] = map[string]any{"contentType": "Text", "content": c.Body}
@@ -154,6 +162,7 @@ type CalendarUpdateCmd struct {
 	End       string   `name:"end" help:"End datetime (RFC3339)"`
 	Body      string   `name:"body" help:"Body text"`
 	Attendees []string `name:"attendee" help:"Attendee email (repeat for multiple)"`
+	ShowAs    string   `name:"show-as" help:"Availability: free, tentative, busy, oof, workingElsewhere, or unknown"`
 	Teams     bool     `name:"teams" help:"Add Teams meeting link"`
 	DryRun    bool     `name:"dry-run" help:"Preview update without modifying the event"`
 }
@@ -177,6 +186,13 @@ func (c *CalendarUpdateCmd) Run(ctx context.Context) error {
 	}
 	if strings.TrimSpace(c.Body) != "" {
 		payload["body"] = map[string]any{"contentType": "Text", "content": c.Body}
+	}
+	if strings.TrimSpace(c.ShowAs) != "" {
+		showAs, err := normalizeCalendarShowAs(c.ShowAs)
+		if err != nil {
+			return err
+		}
+		payload["showAs"] = showAs
 	}
 	if len(c.Attendees) > 0 {
 		attendees := make([]map[string]any, 0, len(c.Attendees))
@@ -287,4 +303,23 @@ func normalizeRange(from string, to string) (string, string) {
 	}
 
 	return from, to
+}
+
+func normalizeCalendarShowAs(value string) (string, error) {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "free":
+		return "free", nil
+	case "tentative":
+		return "tentative", nil
+	case "busy":
+		return "busy", nil
+	case "oof":
+		return "oof", nil
+	case "workingelsewhere":
+		return "workingElsewhere", nil
+	case "unknown":
+		return "unknown", nil
+	default:
+		return "", usage("--show-as must be one of: free, tentative, busy, oof, workingElsewhere, unknown")
+	}
 }
