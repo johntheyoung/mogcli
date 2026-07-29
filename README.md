@@ -160,7 +160,7 @@ The update flow shows current settings, lets you choose one field at a time to e
 - `mog auth`
 - `mog auth app`
 - `mog auth login|update|logout|accounts|use|whoami`
-- `mog mail folders|list|get|send`
+- `mog mail folders|list|get|send|archive|move|mark-read`
 - `mog calendar list|get|create|update|delete`
 - `mog contacts list|get|create|update|delete`
 - `mog groups list|get|members`
@@ -184,13 +184,20 @@ mog mail get <message-id>
 mog mail send --to dev@contoso.com --subject "Deploy complete" --body "Finished."
 mog mail send --to dev@contoso.com --subject "Re: Deploy complete" --quote <message-id>
 mog mail send --to dev@contoso.com --subject "Deploy complete" --body "Finished." --dry-run
+mog mail archive <message-id> --dry-run
+mog mail move <message-id> --folder <folder-id-or-supported-well-known-name> --dry-run
+mog mail mark-read <message-id> --dry-run
 ```
 
 `mog mail folders` lists top-level folders and their IDs, parent IDs, child counts, total item counts, and unread counts. Hidden folders are excluded by default; pass `--include-hidden` to request them explicitly.
 
 Without `--folder`, `mog mail list` preserves the mailbox-wide `/messages` behavior. Pass a Graph folder ID or well-known folder name such as `inbox` to use the folder-scoped messages endpoint. Message list responses include routing, conversation, recipient, timestamp, status, importance, flag, category, classification, attachment-presence, and web-link metadata, but never request message bodies or attachments. Mail folder/list/get reads request Outlook immutable IDs with `Prefer: IdType="ImmutableId"`.
 
-When the action guard is configured, folder discovery must be enabled explicitly as `mail.folders`; enabling `mail.list` does not authorize it.
+`mog mail archive` is a narrow convenience that moves one explicit message to Graph's documented `archive` well-known folder. `mog mail move` requires one explicit message ID and one explicit destination folder ID or supported well-known name. `mog mail mark-read` sets `isRead=true` on one explicit message. Each command supports `--dry-run`, performs no mailbox mutation during a dry run, and does not require `--force`.
+
+Graph implements message moves by creating a new copy in the destination and removing the original. A successful move returns HTTP 201 and the new message resource, including its resulting ID. mog never automatically retries a move; transport failures, server errors, and unrecognized success responses are reported as potentially indeterminate so callers can inspect mailbox state before deciding what to do next.
+
+When the action guard is configured, folder discovery and each mail mutation must be enabled explicitly as `mail.folders`, `mail.archive`, `mail.move`, or `mail.mark-read`; enabling another mail action does not authorize them.
 
 ### Managed automation guard
 
@@ -199,7 +206,7 @@ Interactive CLI use remains unrestricted when no allowlists are configured. For 
 ```bash
 MOG_MANAGED_AUTOMATION=true \
 MOG_ENABLE_COMMANDS=mail \
-MOG_ENABLE_ACTIONS=mail.folders,mail.list,mail.get \
+MOG_ENABLE_ACTIONS=mail.folders,mail.list,mail.get,mail.archive,mail.move,mail.mark-read \
 mog mail folders --json
 ```
 

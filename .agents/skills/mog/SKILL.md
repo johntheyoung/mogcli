@@ -120,6 +120,9 @@ Before writes, identify the profile, object id, target, and exact mutation. Pref
 
 ```bash
 mog mail send --to user@example.com --subject "Subject" --body "Message" --dry-run
+mog mail archive <message-id> --dry-run
+mog mail move <message-id> --folder <folder-id-or-supported-well-known-name> --dry-run
+mog mail mark-read <message-id> --dry-run
 mog calendar create --subject "Planning" --start "2026-06-19T10:00:00+08:00" --end "2026-06-19T10:30:00+08:00" --body "Agenda" --dry-run
 mog calendar update <event-id> --subject "Updated title" --dry-run
 mog calendar delete <event-id> --dry-run
@@ -131,6 +134,8 @@ mog teams dm-send --to user@example.com --body "Message" --dry-run
 mog onedrive mkdir --path /AgentTest --dry-run
 mog onedrive put ./file.txt --path /AgentTest/file.txt --dry-run
 ```
+
+Mail workflow mutations are single-message and require distinct allowlisted actions: `mail.archive`, `mail.move`, and `mail.mark-read`. Graph implements archive/move as copy-then-remove and returns a resulting message resource. If mog reports a move outcome as indeterminate, do **not** retry automatically; inspect the source and destination folders first because the write may already have completed.
 
 For direct Teams messages, prefer the first-class DM command:
 

@@ -25,6 +25,9 @@ const (
 	capMailFolders       runtimeCapability = "mail.folders"
 	capMailGet           runtimeCapability = "mail.get"
 	capMailSend          runtimeCapability = "mail.send"
+	capMailArchive       runtimeCapability = "mail.archive"
+	capMailMove          runtimeCapability = "mail.move"
+	capMailMarkRead      runtimeCapability = "mail.mark-read"
 	capCalendarList      runtimeCapability = "calendar.list"
 	capCalendarGet       runtimeCapability = "calendar.get"
 	capCalendarCreate    runtimeCapability = "calendar.create"
@@ -79,6 +82,9 @@ var capabilityRules = map[runtimeCapability]capabilityRule{
 	capMailFolders:       delegatedOrAppOnlyRule(),
 	capMailGet:           delegatedOrAppOnlyRule(),
 	capMailSend:          delegatedOrAppOnlyRule(),
+	capMailArchive:       delegatedOrAppOnlyRule(),
+	capMailMove:          delegatedOrAppOnlyRule(),
+	capMailMarkRead:      delegatedOrAppOnlyRule(),
 	capCalendarList:      delegatedOnlyRule(calendarAppOnlyMessage),
 	capCalendarGet:       delegatedOnlyRule(calendarAppOnlyMessage),
 	capCalendarCreate:    delegatedOnlyRule(calendarAppOnlyMessage),

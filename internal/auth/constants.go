@@ -21,6 +21,7 @@ var delegatedScopeWorkloadMap = map[string][]string{
 	"mail": {
 		"Mail.Read",
 		"Mail.Send",
+		"Mail.ReadWrite",
 	},
 	"calendar": {
 		"Calendars.Read",
@@ -56,6 +57,7 @@ var delegatedScopeWorkloadMap = map[string][]string{
 var AllDelegatedWorkloadScopes = []string{
 	"Mail.Read",
 	"Mail.Send",
+	"Mail.ReadWrite",
 	"Calendars.Read",
 	"Calendars.ReadWrite",
 	"Contacts.Read",

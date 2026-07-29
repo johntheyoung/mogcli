@@ -19,6 +19,21 @@ func TestCommandActionCanonicalizesPositionalResources(t *testing.T) {
 			want: "mail.get",
 		},
 		{
+			name: "mail archive",
+			args: []string{"mail", "archive", "message/id", "--dry-run"},
+			want: "mail.archive",
+		},
+		{
+			name: "mail move",
+			args: []string{"mail", "move", "message/id", "--folder", "archive", "--dry-run"},
+			want: "mail.move",
+		},
+		{
+			name: "mail mark-read",
+			args: []string{"mail", "mark-read", "message/id", "--dry-run"},
+			want: "mail.mark-read",
+		},
+		{
 			name: "calendar get",
 			args: []string{"calendar", "get", "event-id"},
 			want: "calendar.get",
@@ -148,6 +163,36 @@ func TestEnableActionsAuthorizesCanonicalPositionalActionOnly(t *testing.T) {
 			}
 			if !tc.wantErr && err != nil {
 				t.Fatalf("expected action to be allowed: %v", err)
+			}
+		})
+	}
+}
+
+func TestMailMutationActionAllowlistsAuthorizeOnlyTheirOwnCommand(t *testing.T) {
+	commands := map[string][]string{
+		"mail.archive":   {"mail", "archive", "message-id", "--dry-run"},
+		"mail.move":      {"mail", "move", "message-id", "--folder", "archive", "--dry-run"},
+		"mail.mark-read": {"mail", "mark-read", "message-id", "--dry-run"},
+	}
+
+	for enabled, enabledArgs := range commands {
+		enabled := enabled
+		enabledArgs := enabledArgs
+		t.Run(enabled, func(t *testing.T) {
+			for action, args := range commands {
+				kctx := parseGuardTestCommand(t, args)
+				err := enforceEnabledActions(kctx, enabled, true)
+				if action == enabled && err != nil {
+					t.Fatalf("%s should authorize itself: %v", enabled, err)
+				}
+				if action != enabled && err == nil {
+					t.Fatalf("%s must not authorize %s", enabled, action)
+				}
+			}
+
+			kctx := parseGuardTestCommand(t, enabledArgs)
+			if err := enforceEnabledActions(kctx, "", true); err == nil {
+				t.Fatalf("%s must fail closed without an action allowlist", enabled)
 			}
 		})
 	}

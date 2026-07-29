@@ -45,6 +45,30 @@ func TestValidateCapability(t *testing.T) {
 			capability: capMailFolders,
 		},
 		{
+			name: "consumer delegated mail archive is allowed",
+			record: config.ProfileRecord{
+				Audience: profile.AudienceConsumer,
+				AuthMode: profile.AuthModeDelegated,
+			},
+			capability: capMailArchive,
+		},
+		{
+			name: "enterprise app-only mail move is allowed",
+			record: config.ProfileRecord{
+				Audience: profile.AudienceEnterprise,
+				AuthMode: profile.AuthModeAppOnly,
+			},
+			capability: capMailMove,
+		},
+		{
+			name: "consumer delegated mail mark-read is allowed",
+			record: config.ProfileRecord{
+				Audience: profile.AudienceConsumer,
+				AuthMode: profile.AuthModeDelegated,
+			},
+			capability: capMailMarkRead,
+		},
+		{
 			name: "enterprise app-only groups list is allowed",
 			record: config.ProfileRecord{
 				Audience: profile.AudienceEnterprise,
